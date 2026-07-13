@@ -1,0 +1,16 @@
+id: custom-dsl-time-sqli
+info:
+  name: Custom DSL Time-based SQLi
+  author: penguin
+  severity: high
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/internal/health"
+    matchers:
+      - type: dsl
+        dsl:
+          - "duration >= 5"
+          - "status_code == 200"
+          - "len(body) > 1000"
+          - "!contains(all_headers, 'cf-ray')"

@@ -1,0 +1,15 @@
+id: custom-exposed-debug-endpoint
+info:
+  name: Custom Debug Endpoint
+  author: penguin
+  severity: medium
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/internal/debug"
+    matchers:
+      - type: word
+        words:
+          - "stack trace"
+          - "environment"
+        condition: and

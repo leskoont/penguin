@@ -1,0 +1,19 @@
+# ignore large run outputs and local secrets
+results/**
+!results/proxies/.gitkeep
+reports/**
+.venv/**
+*.tfstate
+*.tfvars
+.env
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

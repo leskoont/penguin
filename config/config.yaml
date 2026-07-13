@@ -1,0 +1,68 @@
+# penguin configuration
+# Paid/OSINT API keys are read from ENVIRONMENT variables ONLY (never stored here).
+# Every paid integration is DISABLED by default.
+
+general:
+  threads: 50
+  rate_limit: 100
+  timeout: 30
+  resolvers_file: wordlists/resolvers.txt
+  output_dir: results
+  user_agent: "penguin-recon"
+  wordlists_dir: wordlists
+  retry_attempts: 3
+  retry_backoff: 2.0
+
+stages:
+  infra: true
+  web: true
+  cloud_db: true
+  elite: true
+
+# per-tool settings; set proxy:false to exclude a tool from proxy routing
+tools:
+  subfinder: {proxy: true, threads: 50}
+  httpx: {proxy: true, threads: 50}
+  puredns: {proxy: true}
+  dnsx: {proxy: true}
+  amass: {proxy: true}
+  ffuf: {proxy: true}
+  katana: {proxy: true}
+  gau: {proxy: true}
+  nuclei: {proxy: true}
+  # these fetch a JS URL directly but have no CLI proxy flag of their own
+  # (see ToolContext.proxy_flag mapping) -- proxy:false avoids burning a
+  # pick() from the rotation for a proxy that would never be applied.
+  linkfinder: {proxy: false}
+  secretfinder: {proxy: false}
+  jsluice: {proxy: false}
+
+proxies:
+  enabled: true                       # fetch + validate + apply on EVERY run
+  proxifly: "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt"
+  iplocate: "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks5.txt"
+  validate: true
+  test_url: "http://example.com"
+  timeout: 5
+  protocol_preference: "http"         # http | socks5 | any
+  rotate: "roundrobin"                # roundrobin | random | fastest
+  pool_file: "results/proxies/proxies_valid.txt"
+
+paid:
+  shodan:        {enabled: false, api_key_env: "SHODAN_KEY"}
+  censys:        {enabled: false, api_id_env: "CENSYS_ID", api_secret_env: "CENSYS_SECRET"}
+  securitytrails: {enabled: false, api_key_env: "SECURITYTRAILS_KEY"}
+  chaos:         {enabled: false, api_key_env: "CHAOS_KEY"}
+  grayhat:       {enabled: false, api_key_env: "GRAYHAT_KEY"}
+  netlas:        {enabled: false, api_key_env: "NETLAS_KEY"}
+  fofa:          {enabled: false, api_key_env: "FOFA_KEY"}
+
+notify:
+  enabled: false
+  provider: slack                    # slack | discord | telegram
+  webhook_env: "PENGUIN_NOTIFY_WEBHOOK"
+  notify_on: ["new_subdomains", "critical_findings"]
+
+continuous:
+  enabled: false
+  interval: "6h"

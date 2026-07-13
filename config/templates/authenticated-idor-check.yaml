@@ -1,0 +1,31 @@
+id: authenticated-idor-check
+info:
+  name: Authenticated IDOR Check
+  author: penguin
+  severity: high
+http:
+  - raw:
+      - |
+        POST /api/login HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/json
+
+        {"username":"{{username}}","password":"{{password}}"}
+    extractors:
+      - type: json
+        name: token
+        json:
+          - ".access_token"
+        internal: true
+  - raw:
+      - |
+        GET /api/users/1 HTTP/1.1
+        Host: {{Hostname}}
+        Authorization: Bearer {{token}}
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"email"'
+          - '"phone"'
+        condition: and

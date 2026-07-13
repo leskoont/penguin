@@ -1,0 +1,5 @@
+# downloaded large wordlists are not committed; keep the self-learning dict
+subdomains-large.txt
+directory-list-2.3-medium.txt
+routes-large.kite
+resolvers.txt

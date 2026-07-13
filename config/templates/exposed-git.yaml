@@ -1,0 +1,24 @@
+id: exposed-git-config
+info:
+  name: Exposed Git Config
+  author: penguin
+  severity: high
+  description: .git/config is accessible, potentially exposing repository structure
+  tags: git,exposure,misconfig
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/HEAD"
+      - "{{BaseURL}}/.git/config"
+    matchers-condition: or
+    matchers:
+      - type: word
+        words:
+          - "ref:"
+          - "[core]"
+          - "repositoryformatversion"
+        part: body
+        condition: and
+      - type: status
+        status:
+          - 200

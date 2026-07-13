@@ -1,0 +1,28 @@
+# penguin continuous recon - systemd timer example
+# Save as /etc/systemd/system/penguin.service and .timer
+
+# /etc/systemd/system/penguin.service
+[Unit]
+Description=penguin continuous recon (every 6h)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/penguin
+ExecStart=/usr/bin/python3 -m penguin continuous --interval 6h
+Environment=PENGUIN_NOTIFY_WEBHOOK=https://hooks.slack.com/services/XXX
+
+# /etc/systemd/system/penguin.timer
+[Unit]
+Description=Run penguin every 6 hours
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+
+[Install]
+WantedBy=timers.target
+
+# --- OR a plain cron line (every 6h) ---
+# 0 */6 * * *  cd /opt/penguin && python3 -m penguin run >> results/cron.log 2>&1
