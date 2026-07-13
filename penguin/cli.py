@@ -11,16 +11,9 @@ from .config import load, load_targets
 from .proxies import get_pool
 from .pipelines.master import run_target
 from .pipelines.report import build_report
+from .ui.console import setup_logging as _setup_logging
 
 LOG = logging.getLogger("penguin")
-
-
-def _setup_logging(verbose: bool):
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
 
 
 def _parse_interval(interval: str) -> int:
