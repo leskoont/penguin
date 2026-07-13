@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Callable, Optional
 
 from ..config import Config
 from ..state import RunState
@@ -17,15 +18,37 @@ from .block4_elite import run_block4
 
 logger = logging.getLogger("penguin.master")
 
+ProgressCb = Callable[[int, str, str], None]
 
-def run_target(cfg: Config, target: dict) -> dict:
+
+def _emit(cb: Optional[ProgressCb], block_num: int, name: str, phase: str) -> None:
+    if cb is None:
+        return
+    try:
+        cb(block_num, name, phase)
+    except Exception:  # noqa - a UI callback must never break a recon run
+        logger.debug("progress_cb raised", exc_info=True)
+
+
+def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = None) -> dict:
     state = RunState(cfg, target["value"])
     logger.info("=== penguin run %s -> %s ===", target["value"], state.run_dir)
 
+    _emit(progress_cb, 1, "infra", "start")
     b1 = run_block1(cfg, state, target)
+    _emit(progress_cb, 1, "infra", "done")
+
+    _emit(progress_cb, 2, "web", "start")
     b2 = run_block2(cfg, state, target)
+    _emit(progress_cb, 2, "web", "done")
+
+    _emit(progress_cb, 3, "cloud_db", "start")
     b3 = run_block3(cfg, state, target)
+    _emit(progress_cb, 3, "cloud_db", "done")
+
+    _emit(progress_cb, 4, "elite", "start")
     b4 = run_block4(cfg, state, target)
+    _emit(progress_cb, 4, "elite", "done")
 
     # accumulate into per-target history files (anew dedup)
     state.add_lines("all_subdomains.txt", b1["subdomains"])
