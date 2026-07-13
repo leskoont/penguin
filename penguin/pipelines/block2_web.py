@@ -106,11 +106,19 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
 
     # ---- API recon ----
     kite = cfg.path("wordlists/routes-large.kite")
+    api_dir = state.sub("api")
     for h in hosts[:10]:
-        ap.probe_swagger(ctx, h, state.path("api/swagger.txt"))
-        ap.graphql_introspection(ctx, h.rstrip("/") + "/graphql", state.path("api/graphql.json"))
+        safe = re.sub(r'[^a-z0-9]', '', h)
+        swagger_out = ap.probe_swagger(ctx, h, api_dir / f"swagger_{safe}.txt")
+        if swagger_out:
+            results["api"].append(str(swagger_out))
+        graphql_out = ap.graphql_introspection(ctx, h.rstrip("/") + "/graphql", api_dir / f"graphql_{safe}.json")
+        if graphql_out:
+            results["api"].append(str(graphql_out))
         grpc_host = re.sub(r"^https?://", "", h).split("/")[0]
-        ap.grpcurl_list(ctx, f"{grpc_host}:443", state.path("api/grpc.txt"))
+        grpc_out = ap.grpcurl_list(ctx, f"{grpc_host}:443", api_dir / f"grpc_{safe}.txt")
+        if grpc_out:
+            results["api"].append(str(grpc_out))
     if kite.exists():
         ap.kiterunner(ctx, hosts_file, kite, state.path("api/kiterunner.json"))
         results["api"].append("kiterunner")
