@@ -60,7 +60,5 @@ def github_subdomains(ctx: ToolContext, domain: str, out: Path) -> Optional[Path
 
 def gitdumper(ctx: ToolContext, url: str, out_dir: Path) -> Optional[Path]:
     cmd = ["python3", "gitdumper.py", url, str(out_dir)]
-    from ..runner import run
-
-    r = run(cmd, timeout=300)
+    r = ctx.execute("gitdumper", cmd, timeout=300)
     return out_dir if out_dir.exists() else None

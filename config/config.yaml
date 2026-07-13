@@ -30,12 +30,29 @@ tools:
   katana: {proxy: true}
   gau: {proxy: true}
   nuclei: {proxy: true}
-  # these fetch a JS URL directly but have no CLI proxy flag of their own
-  # (see ToolContext.proxy_flag mapping) -- proxy:false avoids burning a
-  # pick() from the rotation for a proxy that would never be applied.
+  # these have no CLI proxy flag of their own (see ToolContext.proxy_flag
+  # mapping) -- proxy:false avoids burning a pick() from the rotation for a
+  # proxy that would never be applied.
   linkfinder: {proxy: false}
   secretfinder: {proxy: false}
   jsluice: {proxy: false}
+  gitdumper: {proxy: false}
+  cloudflair: {proxy: false}
+  trufflehog: {proxy: false}
+  gitleaks: {proxy: false}
+  github-subdomains: {proxy: false}
+  dnsvalidator: {proxy: false}
+  altdns: {proxy: false}
+  gotator: {proxy: false}
+  hakrawler: {proxy: false}
+  paramspider: {proxy: false}
+  x8: {proxy: false}
+  masscan: {proxy: false}
+  redis-cli: {proxy: false}
+  S3Scanner: {proxy: false}
+  bucketloot: {proxy: false}
+  trivy: {proxy: false}
+  grpcurl: {proxy: false}
 
 proxies:
   enabled: true                       # fetch + validate + apply on EVERY run

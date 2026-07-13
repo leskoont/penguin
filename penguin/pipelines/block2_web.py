@@ -50,6 +50,8 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         r = ct.gau(ctx, dom, js_dir / f"gau_{dom}.txt")
         r = ct.katana(ctx, hosts_file, js_dir / f"katana_{dom}.txt")
         r = ct.waybackurls(ctx, dom, js_dir / f"wb_{dom}.txt")
+        ct.paramspider(ctx, dom, js_dir / f"paramspider_{dom}.txt")
+    ct.hakrawler(ctx, hosts_file, js_dir / "hakrawler.txt")
     for f in js_dir.glob("*.txt"):
         for l in f.read_text(encoding="utf-8").splitlines():
             if JS_RE.match(l.strip()):
@@ -67,9 +69,24 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     endpoints_file = state.path("content/endpoints.txt")
     endpoints_file.parent.mkdir(parents=True, exist_ok=True)
     secrets_file = state.path("content/js_secrets.txt")
-    for js in (js_alive.read_text(encoding="utf-8").splitlines() if js_alive.exists() else []):
+
+    # paramspider mines parametrized URLs (not just .js) -- fold those into endpoints too
+    param_urls: set[str] = set()
+    for f in js_dir.glob("paramspider_*.txt"):
+        param_urls |= {l.strip() for l in f.read_text(encoding="utf-8").splitlines() if l.strip()}
+    if param_urls:
+        with open(endpoints_file, "a", encoding="utf-8") as fh:
+            fh.write("\n".join(sorted(param_urls)) + "\n")
+
+    js_dl_dir = state.sub("js/downloaded")
+    for i, js in enumerate(js_alive.read_text(encoding="utf-8").splitlines() if js_alive.exists() else []):
         sc.linkfinder(ctx, Path(js), endpoints_file)
         sc.secretfinder(ctx, Path(js), secrets_file)
+        local_js = js_dl_dir / f"{i}.js"
+        ctx.execute("curl", ["curl", "-s", "-o", str(local_js), js], timeout=30)
+    js_files = list(js_dl_dir.glob("*.js"))
+    if js_files:
+        sc.jsluice(ctx, " ".join(str(f) for f in js_files), state.path("content/jsluice.txt"))
     if endpoints_file.exists():
         results["endpoints"] = endpoints_file.read_text(encoding="utf-8").splitlines()
     if secrets_file.exists():
@@ -77,17 +94,23 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
 
     # ---- directory fuzz + hidden params ----
     wl = cfg.path("wordlists/directory-list-2.3-medium.txt")
+    params_wl = cfg.path("wordlists/params.txt")
     if wl.exists():
         for h in hosts[:10]:
-            ct.ffuf_dirs(ctx, h, wl, state.path("content") / f"ffuf_{re.sub(r'[^a-z0-9]','',h)}.json")
-            ct.feroxbuster(ctx, h, wl, state.path("content") / f"ferox_{re.sub(r'[^a-z0-9]','',h)}.txt")
-            ct.arjun(ctx, h, state.path("content") / f"arjun_{re.sub(r'[^a-z0-9]','',h)}.json")
+            safe = re.sub(r'[^a-z0-9]', '', h)
+            ct.ffuf_dirs(ctx, h, wl, state.path("content") / f"ffuf_{safe}.json")
+            ct.feroxbuster(ctx, h, wl, state.path("content") / f"ferox_{safe}.txt")
+            ct.arjun(ctx, h, state.path("content") / f"arjun_{safe}.json")
+            if params_wl.exists():
+                ct.x8(ctx, h, params_wl, state.path("content") / f"x8_{safe}.json")
 
     # ---- API recon ----
     kite = cfg.path("wordlists/routes-large.kite")
     for h in hosts[:10]:
         ap.probe_swagger(ctx, h, state.path("api/swagger.txt"))
         ap.graphql_introspection(ctx, h.rstrip("/") + "/graphql", state.path("api/graphql.json"))
+        grpc_host = re.sub(r"^https?://", "", h).split("/")[0]
+        ap.grpcurl_list(ctx, f"{grpc_host}:443", state.path("api/grpc.txt"))
     if kite.exists():
         ap.kiterunner(ctx, hosts_file, kite, state.path("api/kiterunner.json"))
         results["api"].append("kiterunner")

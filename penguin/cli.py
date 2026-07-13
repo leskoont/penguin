@@ -114,9 +114,10 @@ def cmd_install_check(args):
 
     tools = ["subfinder", "httpx", "nuclei", "amass", "puredns", "dnsx", "ffuf",
              "feroxbuster", "katana", "gau", "waybackurls", "subjs", "arjun",
-             "masscan", "nmap", "naabu", "cloud_enum", "trufflehog", "gitleaks",
+             "masscan", "nmap", "cloud_enum", "trufflehog", "gitleaks",
              "gitdumper", "github-subdomains", "kr", "grpcurl", "trivy", "dnsgen",
-             "altdns", "gotator", "massdns", "rustscan", "redis-cli", "aws", "dig"]
+             "altdns", "gotator", "redis-cli", "aws", "dig", "dnsvalidator",
+             "hakrawler", "paramspider", "x8", "S3Scanner", "bucketloot", "jsluice"]
     missing = []
     for b in tools:
         r = run([b, "--help"], retries=1, timeout=10)
@@ -143,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="penguin", description="penguin recon automation framework")
     p.add_argument("-c", "--config", default=None, help="path to config.yaml")
     p.add_argument("-t", "--targets", default=None, help="path to targets.txt")
-    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("-v", "--verbose", action="store_true", help="verbose logging (works before or after the subcommand)")
     p.add_argument("--no-venv", action="store_true", help="do not use/create .venv")
     p.add_argument("--reinstall-venv", action="store_true", help="force reinstall venv deps")
     sub = p.add_subparsers(dest="cmd")
@@ -165,6 +166,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     pr = sub.add_parser("proxies", help="refresh proxy pool now")
     pr.set_defaults(func=cmd_proxies)
+
+    # -v also accepted *after* the subcommand. default=SUPPRESS keeps this
+    # copy from overwriting a -v already parsed at the top level when omitted
+    # here (argparse subparsers otherwise clobber the namespace with their
+    # own default even if the flag isn't repeated).
+    for sp in (r, c, s, i, pr):
+        sp.add_argument("-v", "--verbose", action="store_true", default=argparse.SUPPRESS,
+                        help="verbose logging")
     return p
 
 

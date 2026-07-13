@@ -43,6 +43,7 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         sd.findomain(ctx, domain, sub_dir / f"findomain_{domain}.txt")
         sd.chaos(ctx, domain, sub_dir / f"chaos_{domain}.txt")
         sd.crtsh(ctx, domain, sub_dir / f"crtsh_{domain}.txt")
+        sd.amass_intel(ctx, domain.split(".")[0], sub_dir / f"amass_intel_{domain}.txt")
 
     # ---- merge raw (stage 1: passive) ----
     all_raw = state.path("all_subdomains_raw.txt")
@@ -53,6 +54,9 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
 
     # ---- Stage 2: brute + Stage 3: permutations ----
     resolvers = cfg.path(cfg.general.resolvers_file)
+    if not resolvers.exists():
+        logger.info("[block1] no resolvers file; bootstrapping via dnsvalidator")
+        rs.dnsvalidator(ctx, resolvers)
     if resolvers.exists():
         from ..tools import resolve as rs2
 
@@ -63,10 +67,17 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         rs2.dnsgen(ctx, perms_in, sub_dir / "dnsgen_perms.txt")
         rs2.puredns_resolve(ctx, sub_dir / "dnsgen_perms.txt", resolvers, sub_dir / "perms_resolved.txt")
 
+        words = cfg.path("wordlists/permutation-words.txt")
+        if words.exists():
+            rs2.altdns(ctx, perms_in, words, sub_dir / "altdns_perms.txt", sub_dir / "altdns_resolved.txt")
+            rs2.gotator(ctx, perms_in, sub_dir / "gotator_perms.txt", words)
+            rs2.puredns_resolve(ctx, sub_dir / "gotator_perms.txt", resolvers, sub_dir / "gotator_resolved.txt")
+
         # feed brute-force + permutation discoveries back into the pipeline
         # (guide's self-learning principle: every found artifact returns to
         # the pipeline instead of being a dead end)
-        for extra in (sub_dir / "puredns_brute.txt", sub_dir / "perms_resolved.txt"):
+        for extra in (sub_dir / "puredns_brute.txt", sub_dir / "perms_resolved.txt",
+                      sub_dir / "altdns_resolved.txt", sub_dir / "gotator_resolved.txt"):
             if extra.exists():
                 raw_lines |= {l.strip() for l in extra.read_text(encoding="utf-8").splitlines() if l.strip()}
 

@@ -41,9 +41,10 @@ GO_TOOLS=(
   "github.com/lc/subjs@latest"
   "github.com/ffuf/ffuf@latest"
   "github.com/epi052/feroxbuster@latest"
-  "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
   "github.com/tomnomnom/httprobe@latest"
   "github.com/Emoe/kiterunner/cmd/kr@latest"
+  "github.com/hakluke/hakrawler@latest"
+  "github.com/fullstorydev/grpcurl/cmd/grpcurl@latest"
 )
 install_go
 export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
@@ -53,7 +54,7 @@ for t in "${GO_TOOLS[@]}"; do
 done
 
 # ---- pip python tools ----
-PY_TOOLS=(trufflehog gitleaks gitdumper github-subdomains dnsgen altdns gotator linkfinder SecretFinder jsluice jsretk arjun paramspider x8 cloud_enum S3Scanner bucketloot gcpbucketbrute)
+PY_TOOLS=(trufflehog gitleaks gitdumper github-subdomains dnsgen altdns gotator linkfinder SecretFinder jsluice jsretk arjun paramspider x8 cloud_enum S3Scanner bucketloot gcpbucketbrute dnsvalidator)
 log "pip install core python deps"
 python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt || true
@@ -62,7 +63,7 @@ for m in trufflehog gitleaks; do
 done
 
 # ---- system packages ----
-for b in masscan nmap rustscan redis-tools dnsutils awscli docker.io trivy; do
+for b in masscan nmap redis-tools dnsutils awscli docker.io trivy; do
   command -v "$b" >/dev/null 2>&1 || log "  note: $b not auto-installed (apt/brew as needed)"
 done
 
@@ -72,6 +73,8 @@ mkdir -p wordlists results/proxies reports
 [ -f wordlists/subdomains-large.txt ] || { log "fetching subdomains-large (assetnote)"; curl -sL https://wordlists-cdn.assetnote.io/data/us_subdomains.txt -o wordlists/subdomains-large.txt 2>/dev/null || log "  ! subdomain list fetch failed"; }
 [ -f wordlists/directory-list-2.3-medium.txt ] || { log "fetching directory wordlist (SecLists)"; curl -sL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt -o wordlists/directory-list-2.3-medium.txt 2>/dev/null || log "  ! dir list fetch failed"; }
 [ -f wordlists/routes-large.kite ] || { log "fetching kiterunner routes-large.kite"; curl -sL https://wordlists-cdn.assetnote.io/data/kiterunner/routes-large.kite -o wordlists/routes-large.kite 2>/dev/null || log "  ! kite fetch failed"; }
+[ -f wordlists/permutation-words.txt ] || { log "fetching permutation words (OneListForAll)"; curl -sL https://raw.githubusercontent.com/six2dez/OneListForAll/main/permutations_list.txt -o wordlists/permutation-words.txt 2>/dev/null || log "  ! permutation words fetch failed"; }
+[ -f wordlists/params.txt ] || { log "fetching param names (SecLists)"; curl -sL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/burp-parameter-names.txt -o wordlists/params.txt 2>/dev/null || log "  ! param wordlist fetch failed"; }
 [ -f wordlists/learned.txt ] || touch wordlists/learned.txt
 
 log "done. Run: python3 -m penguin install-check"

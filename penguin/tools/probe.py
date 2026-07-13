@@ -23,24 +23,6 @@ def httpx_simple(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     return out if out.exists() else None
 
 
-def whatweb(ctx: ToolContext, url: str, out: Path) -> Optional[Path]:
-    cmd = ["whatweb", "-a", "3", url]
-    r = ctx.execute("whatweb", cmd, timeout=120)
-    if r.ok:
-        out.write_text(r.stdout, encoding="utf-8")
-        return out
-    return None
-
-
-def wappalyzer(ctx: ToolContext, url: str, out: Path) -> Optional[Path]:
-    cmd = ["wappalyzer", url, "--pretty"]
-    r = ctx.execute("wappalyzer", cmd, timeout=120)
-    if r.ok:
-        out.write_text(r.stdout, encoding="utf-8")
-        return out
-    return None
-
-
 def nuclei_tech(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     cmd = ["nuclei", "-l", str(in_file), "-t", "technologies/", "-o", str(out)]
     r = ctx.execute("nuclei", cmd, timeout=600)

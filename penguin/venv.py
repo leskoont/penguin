@@ -49,7 +49,7 @@ def _install_deps() -> bool:
     return ok
 
 
-def ensure_venv(argv=None, *, reinstall: bool = False) -> None:
+def ensure_venv(argv=None) -> None:
     if os.environ.get("PENGUIN_NO_VENV"):
         return
     if in_venv():
@@ -62,7 +62,7 @@ def ensure_venv(argv=None, *, reinstall: bool = False) -> None:
             sys.stderr.write(f"[penguin] venv create failed: {exc}; using current interpreter\n")
             return
 
-    if reinstall or not MARKER.exists():
+    if not MARKER.exists():
         _install_deps()
 
     py = venv_python()

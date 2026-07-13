@@ -28,6 +28,11 @@ python -m penguin install-check   # lists which recon binaries are missing local
      configured retry/backoff policy for free.
    - Missing binaries must not raise; `runner.run()` already skips them
      non-fatally.
+   - If the wrapper needs a paid API key, never put it directly in `cmd`
+     (it ends up in `ps`/`/proc/<pid>/cmdline` for other local users). Use
+     `ctx.curl_with_secret(...)` for curl calls, or `ctx.execute(...,
+     extra_env={...})` if the tool reads the key from an environment
+     variable.
 2. If the tool accepts a proxy flag, add it to the `mapping` dict in
    `penguin/tools/_base.py::ToolContext.proxy_flag`. If it doesn't support a
    proxy, set `proxy: false` for it in `config/config.yaml → tools`.

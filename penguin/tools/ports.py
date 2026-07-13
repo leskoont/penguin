@@ -23,21 +23,6 @@ def nmap_nse(ctx: ToolContext, hosts_file: Path, out: Path, ports: str = DB_PORT
     return out if out.exists() else None
 
 
-def naabu(ctx: ToolContext, target: str, out: Path, ports: str = "1-1000") -> Optional[Path]:
-    cmd = ["naabu", "-host", target, "-p", ports, "-rate", "10000", "-o", str(out)]
-    r = ctx.execute("naabu", cmd, timeout=600)
-    return out if out.exists() else None
-
-
-def rustscan(ctx: ToolContext, target: str, out: Path) -> Optional[Path]:
-    cmd = ["rustscan", "-a", target, "--", "-sV", "-sC"]
-    r = ctx.execute("rustscan", cmd, timeout=600)
-    if r.ok:
-        out.write_text(r.stdout, encoding="utf-8")
-        return out
-    return None
-
-
 def redis_cli(ctx: ToolContext, host: str) -> Optional[str]:
     cmd = ["redis-cli", "-h", host, "INFO", "server"]
     r = ctx.execute("redis-cli", cmd, timeout=30)

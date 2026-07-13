@@ -8,6 +8,8 @@ skipped non-fatally.
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -48,12 +50,36 @@ class ToolContext:
         }
         return mapping.get(tool, [])
 
-    def execute(self, tool: str, cmd: list, *, timeout: Optional[float] = None, log_stdout: bool = False):
+    def execute(self, tool: str, cmd: list, *, timeout: Optional[float] = None, log_stdout: bool = False,
+                extra_env: Optional[dict] = None):
         proxy = self.proxy_for(tool)
         if proxy:
             cmd += self.proxy_flag(tool, proxy)
         to = timeout or self.cfg.general.timeout
-        return run(cmd, retries=self.cfg.general.retry_attempts, backoff=self.cfg.general.retry_backoff, timeout=to, log_stdout=log_stdout)
+        env = None
+        if extra_env:
+            env = {**os.environ, **extra_env}
+        return run(cmd, retries=self.cfg.general.retry_attempts, backoff=self.cfg.general.retry_backoff,
+                   timeout=to, log_stdout=log_stdout, env=env)
+
+    def curl_with_secret(self, curl_args: list[str], directives: list[str], *, timeout: Optional[float] = None):
+        """Run curl with credentials passed via a temp ``-K`` config file instead of
+        argv, so API keys don't show up in ``ps``/``/proc/<pid>/cmdline`` for other
+        local users. ``directives`` are curl config-file lines, e.g.
+        ``['header = "apikey: xxx"']`` or ``['user = "id:secret"']``.
+        """
+        fd, cfg_path = tempfile.mkstemp(suffix=".curlcfg", text=True)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(directives) + "\n")
+            os.chmod(cfg_path, 0o600)
+            cmd = ["curl", "-s", "-K", cfg_path] + curl_args
+            return self.execute("curl", cmd, timeout=timeout)
+        finally:
+            try:
+                os.unlink(cfg_path)
+            except OSError:
+                pass
 
     def threads_flag(self, tool: str, default: int) -> list[str]:
         t = self.cfg.tool_setting(tool, "threads", self.cfg.general.threads)

@@ -33,3 +33,12 @@ available. We aim to acknowledge reports within 5 business days.
 - `results/` and `reports/` (per-run output) are `.gitignore`d by default —
   do not force-add files from those directories to version control, they may
   contain scan output about real, potentially sensitive targets.
+- `wordlists/learned.txt` is tracked as an empty seed file but accumulates
+  target-derived naming patterns during real runs — don't commit it after a
+  real (non-example) run; see the note in the README.
+- Tool wrappers that need paid API keys pass them via env vars or a
+  `curl -K` temp config file (see `ToolContext.curl_with_secret` /
+  `execute(..., extra_env=...)` in `penguin/tools/_base.py`) rather than raw
+  CLI arguments, so keys don't show up in `ps`/`/proc/<pid>/cmdline` for
+  other local users. Follow the same pattern when adding new paid
+  integrations.

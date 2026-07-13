@@ -38,10 +38,3 @@ def trivy_image(ctx: ToolContext, image: str, out: Path) -> Optional[Path]:
     return out if out.exists() else None
 
 
-def ggshield_ci(ctx: ToolContext, out: Path) -> Optional[Path]:
-    cmd = ["ggshield", "secret", "scan", "ci"]
-    r = ctx.execute("ggshield", cmd, timeout=300)
-    if r.ok or r.stderr:
-        out.write_text(r.stdout + r.stderr, encoding="utf-8")
-        return out
-    return None

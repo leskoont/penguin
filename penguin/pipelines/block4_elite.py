@@ -35,13 +35,59 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
     og.censys_certs(ctx, domain, origin_dir / "censys_certs.json")
     og.cloudflair(ctx, domain, origin_dir / "cloudflair.txt")
 
+    # ---- verify origin IP candidates found above (bypasses CDN if real) ----
+    ip_re = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
+    candidate_ips: set[str] = set()
+    for f in origin_dir.glob("*.txt"):
+        candidate_ips |= set(ip_re.findall(f.read_text(encoding="utf-8")))
+    for f in origin_dir.glob("*.json"):
+        candidate_ips |= set(ip_re.findall(f.read_text(encoding="utf-8")))
+    verified_ips = []
+    for ip in sorted(candidate_ips):
+        vout = origin_dir / f"verify_{ip.replace('.', '_')}.txt"
+        og.verify_origin(ctx, domain, ip, vout)
+        if vout.exists() and "returncode=0" in vout.read_text(encoding="utf-8"):
+            verified_ips.append(ip)
+    results["origin_ips"] = verified_ips
+
     # ---- CI/CD + Git ----
+    # github code search is a passive subdomain source too, but it's grouped
+    # here (not block1) per its git-secret-scanner module (Block 4.2)
+    sc.github_subdomains(ctx, domain, state.path("gitcicd/github_subdomains.txt"))
+
     subs_file = state.path("resolved.txt")
     if subs_file.exists():
         exposed = gc.exposed_git_probe(ctx, subs_file, state.path("gitcicd/exposed_git.txt"))
         if exposed:
             results["exposed_git"] = exposed.read_text(encoding="utf-8").splitlines()
-    # git history secrets on dumped repos (if any)
+            # dump + scan exposed .git repos for leaked secrets
+            dumps_dir = state.sub("gitcicd/dumps")
+            for sub in results["exposed_git"][:10]:
+                dump_dir = dumps_dir / sub.replace("/", "_")
+                gc_out = gc.gitdumper(ctx, f"https://{sub}/.git/", dump_dir)
+                if gc_out and gc_out.exists():
+                    th = sc.trufflehog_git(ctx, str(dump_dir), state.path("gitcicd") / f"trufflehog_{sub.replace('/', '_')}.json")
+                    gl = sc.gitleaks(ctx, dump_dir, state.path("gitcicd") / f"gitleaks_{sub.replace('/', '_')}.json")
+                    for r in (th, gl):
+                        if r and r.exists():
+                            results["secrets"].append(str(r))
+
+    # ---- exposed docker registries (best-effort hostname guesses) ----
+    registry_dir = state.sub("gitcicd/registries")
+    for registry in (f"registry.{domain}", f"{domain}:5000"):
+        catalog_out = registry_dir / f"catalog_{registry.replace(':', '_').replace('/', '_')}.json"
+        cat = gc.docker_registry_catalog(ctx, registry, catalog_out)
+        if cat and cat.exists():
+            import json as _json
+
+            try:
+                repos = _json.loads(cat.read_text(encoding="utf-8")).get("repositories", [])
+            except Exception:
+                repos = []
+            for repo in repos[:10]:
+                gc.trivy_image(ctx, f"{registry}/{repo}:latest",
+                               registry_dir / f"trivy_{repo.replace('/', '_')}.json")
+
     nu.nuclei_update(ctx)  # ensure templates present (best-effort)
 
     # ---- custom nuclei templates on live hosts ----

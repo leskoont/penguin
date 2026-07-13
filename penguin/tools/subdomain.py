@@ -47,8 +47,10 @@ def findomain(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
 def chaos(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     if not ctx.cfg.paid_enabled("chaos"):
         return None
-    cmd = ["chaos", "-d", domain, "-silent", "-o", str(out), "-key", ctx.cfg.paid_key("chaos")]
-    r = ctx.execute("chaos", cmd)
+    # chaos reads CHAOS_KEY from the environment when -key is omitted -- keeps
+    # the key out of argv (ps/proc/pid/cmdline).
+    cmd = ["chaos", "-d", domain, "-silent", "-o", str(out)]
+    r = ctx.execute("chaos", cmd, extra_env={"CHAOS_KEY": ctx.cfg.paid_key("chaos")})
     return out if r.ok else None
 
 

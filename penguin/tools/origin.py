@@ -7,6 +7,11 @@ from typing import Optional
 from ._base import ToolContext
 
 
+def _curlcfg_escape(value: str) -> str:
+    """Escape a value for use inside a double-quoted curl -K config directive."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def dig_resolve(ctx: ToolContext, host: str, resolver: str, out: Path) -> Optional[str]:
     cmd = ["dig", host, "@" + resolver, "+short"]
     r = ctx.execute("dig", cmd, timeout=30)
@@ -29,10 +34,11 @@ def cloudflare_trace(ctx: ToolContext, url: str, out: Path) -> Optional[Path]:
 def historical_dns_securitytrails(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     if not ctx.cfg.paid_enabled("securitytrails"):
         return None
-    cmd = ["curl", "-s",
-           f"https://api.securitytrails.com/v1/domain/{domain}/history/dns/a",
-           "-H", f"apikey: {ctx.cfg.paid_key('securitytrails')}"]
-    r = ctx.execute("curl", cmd, timeout=60)
+    key = _curlcfg_escape(ctx.cfg.paid_key("securitytrails"))
+    directives = [f'header = "apikey: {key}"']
+    r = ctx.curl_with_secret(
+        [f"https://api.securitytrails.com/v1/domain/{domain}/history/dns/a"], directives, timeout=60
+    )
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out
@@ -52,10 +58,17 @@ def viewdns_history(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
 def censys_certs(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     if not ctx.cfg.paid_enabled("censys"):
         return None
-    cmd = ["curl", "-s", "-u", f"{ctx.cfg.paid_key('censys','id')}:{ctx.cfg.paid_key('censys','secret')}",
-           "https://search.censys.io/api/v2/certificates/search?per_page=25",
-           "-d", f'{{"query":"parsed.issuer.common_name:\\"{domain}\\""}}', "-H", "Content-Type: application/json"]
-    r = ctx.execute("curl", cmd, timeout=60)
+    user = _curlcfg_escape(f"{ctx.cfg.paid_key('censys', 'id')}:{ctx.cfg.paid_key('censys', 'secret')}")
+    directives = [f'user = "{user}"']
+    r = ctx.curl_with_secret(
+        [
+            "https://search.censys.io/api/v2/certificates/search?per_page=25",
+            "-d", f'{{"query":"parsed.issuer.common_name:\\"{domain}\\""}}',
+            "-H", "Content-Type: application/json",
+        ],
+        directives,
+        timeout=60,
+    )
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out
@@ -65,9 +78,16 @@ def censys_certs(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
 def cloudflair(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     if not ctx.cfg.paid_enabled("censys"):
         return None
-    cmd = ["python3", "cloudflair.py", domain, "-o", str(out),
-           "-k", ctx.cfg.paid_key("censys", "id"), "-s", ctx.cfg.paid_key("censys", "secret")]
-    r = ctx.execute("cloudflair", cmd, timeout=300)
+    # CloudFlair reads CENSYS_API_ID / CENSYS_API_SECRET from the environment
+    # when -k/-s are omitted -- keeps the key out of argv (ps/proc/pid/cmdline).
+    cmd = ["python3", "cloudflair.py", domain, "-o", str(out)]
+    r = ctx.execute(
+        "cloudflair", cmd, timeout=300,
+        extra_env={
+            "CENSYS_API_ID": ctx.cfg.paid_key("censys", "id"),
+            "CENSYS_API_SECRET": ctx.cfg.paid_key("censys", "secret"),
+        },
+    )
     return out if out.exists() else None
 
 

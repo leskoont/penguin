@@ -142,6 +142,12 @@ notify:
 - `wordlists.py` extracts nouns from discovered endpoints/subdomains and feeds
   them back into the next run's brute/permutation/param fuzzing.
 
+> ⚠️ `wordlists/learned.txt` is tracked in git as an empty seed file. Once you
+> run penguin against a real target, it fills up with naming patterns learned
+> from that target's own subdomains/paths. Don't commit it after a real run —
+> either keep it untracked locally (`git update-index --skip-worktree
+> wordlists/learned.txt`) or reset it to empty before committing.
+
 ## Custom Nuclei templates
 
 `config/templates/` ships the four templates from guide §4.4 (exposed-git,

@@ -26,6 +26,13 @@ def puredns_resolve(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path)
     return out if out.exists() else None
 
 
+def dnsx_ips(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path) -> Optional[Path]:
+    """Resolve hostnames to plain A-record IPs (one per line, no host/type labels)."""
+    cmd = ["dnsx", "-l", str(in_file), "-r", str(resolvers), "-a", "-resp-only", "-o", str(out)]
+    r = ctx.execute("dnsx", cmd, timeout=600)
+    return out if out.exists() else None
+
+
 def dnsx(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path, *, ipv6: bool = False) -> Optional[Path]:
     cmd = ["dnsx", "-l", str(in_file), "-r", str(resolvers), "-a", "-resp", "-cname", "-mx", "-ns", "-txt"]
     if ipv6:
@@ -56,7 +63,3 @@ def gotator(ctx: ToolContext, in_file: Path, out: Path, words: Path) -> Optional
     return out if out.exists() else None
 
 
-def massdns(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path) -> Optional[Path]:
-    cmd = ["massdns", "-r", str(resolvers), "-t", "A", "-o", "S", "-w", str(out), str(in_file)]
-    r = ctx.execute("massdns", cmd, timeout=600)
-    return out if out.exists() else None
