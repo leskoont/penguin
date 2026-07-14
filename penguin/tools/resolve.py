@@ -16,13 +16,17 @@ def dnsvalidator(ctx: ToolContext, resolvers_out: Path) -> Optional[Path]:
 
 def puredns_bruteforce(ctx: ToolContext, domain: str, wordlist: Path, resolvers: Path, out: Path) -> Optional[Path]:
     cmd = ["puredns", "bruteforce", str(wordlist), domain, "-r", str(resolvers), "-w", str(out)]
-    r = ctx.execute("puredns", cmd, timeout=1200)
+    # retries=1: puredns doesn't use the proxy pool, and a 1200s timeout that
+    # already ran to the wall means the same wordlist+resolvers will run just as
+    # long the next time -- replaying it 3x is 60 min of dead wall-clock for a
+    # result that was already final on attempt 1.
+    r = ctx.execute("puredns", cmd, timeout=1200, retries=1)
     return out if out.exists() else None
 
 
 def puredns_resolve(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path) -> Optional[Path]:
     cmd = ["puredns", "resolve", "-r", str(resolvers), "-w", str(out), str(in_file)]
-    r = ctx.execute("puredns", cmd, timeout=1200)
+    r = ctx.execute("puredns", cmd, timeout=1200, retries=1)  # same as puredns_bruteforce
     return out if out.exists() else None
 
 

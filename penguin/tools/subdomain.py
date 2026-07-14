@@ -23,13 +23,17 @@ def amass_passive(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     # -src was removed from amass v4's `enum` flag set; passing it now fails
     # with "flag provided but not defined: -src" and aborts the whole run.
     cmd = ["amass", "enum", "-passive", "-d", domain, "-o", str(out)]
-    r = ctx.execute("amass", cmd, timeout=600)
+    # retries=1: amass doesn't use the proxy pool (see tools/_base.py), so the
+    # default 3x "re-pick a proxy" budget buys nothing here -- it just replays
+    # an already-generous 600s timeout up to three times (observed timing out
+    # at 600s, which would then cost 30 min of dead wall-clock on retries).
+    r = ctx.execute("amass", cmd, timeout=600, retries=1)
     return out if r.ok else None
 
 
 def amass_intel(ctx: ToolContext, org: str, out: Path) -> Optional[Path]:
     cmd = ["amass", "intel", "-org", org, "-o", str(out)]
-    r = ctx.execute("amass", cmd, timeout=600)
+    r = ctx.execute("amass", cmd, timeout=600, retries=1)  # same as amass_passive
     return out if r.ok else None
 
 
@@ -47,7 +51,9 @@ def findomain(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     # same issue as subfinder above: certificate-transparency + API lookups
     # routinely run past the general 30s default, which made this fail every
     # attempt in both observed runs ("timeout after 30s" x3 each time).
-    r = ctx.execute("findomain", cmd, timeout=120)
+    # retries=1: observed timing out at 120s x2 -- findomain doesn't use the
+    # proxy pool either, so replaying a full 120s timeout buys nothing.
+    r = ctx.execute("findomain", cmd, timeout=120, retries=1)
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out
