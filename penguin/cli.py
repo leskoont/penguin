@@ -201,6 +201,40 @@ def cmd_install_check(
     return 0
 
 
+@app.command("tui", help="run a single target with a live textual dashboard")
+def cmd_tui(
+    ctx: typer.Context,
+    target: Optional[str] = typer.Option(None, "--target", help="single domain to scan"),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
+    config: Optional[str] = typer.Option(None, "-c", "--config", help="path to config.yaml"),
+    targets: Optional[str] = typer.Option(None, "-t", "--targets", help="path to targets.txt"),
+    no_venv: bool = typer.Option(False, "--no-venv", hidden=True),
+    reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
+) -> int:
+    cfg_path, targets_path = _merge(ctx, verbose, config, targets)
+    cfg = load(cfg_path)
+    resolved = resolve_targets(cfg, targets_path, target)
+    if not resolved:
+        LOG.error("no targets; pass --target or populate config/targets.txt")
+        return 1
+    picked = resolved[0]
+    if len(resolved) > 1:
+        import questionary
+
+        value = questionary.select(
+            "Multiple targets resolved; pick one for the TUI:",
+            choices=[t["value"] for t in resolved],
+        ).ask()
+        if value is None:
+            return 1
+        picked = next(t for t in resolved if t["value"] == value)
+
+    from .ui.tui import PenguinTUI
+
+    PenguinTUI(cfg, picked).run()
+    return 0
+
+
 @app.command("proxies", help="refresh proxy pool now")
 def cmd_proxies(
     ctx: typer.Context,
