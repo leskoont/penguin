@@ -113,18 +113,28 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
                            "bruteforce -- run scripts/install.sh to fetch wordlists", brute_wl)
         perms_in = sub_dir / "all_for_perms.txt"
         perms_in.write_text("\n".join(sorted(raw_lines)), encoding="utf-8")
-        rs2.dnsgen(ctx, perms_in, sub_dir / "dnsgen_perms.txt")
-        rs2.puredns_resolve(ctx, sub_dir / "dnsgen_perms.txt", resolvers, sub_dir / "perms_resolved.txt")
 
+        # Permutation *generation* is pure local work writing distinct files, so
+        # run the generators concurrently. Their puredns *resolution* stays
+        # strictly sequential below: two puredns runs against the same resolver
+        # set would rate-limit each other and silently drop valid names.
+        # altdns was dropped from this fan-out: it's broken upstream against
+        # modern tldextract ("cannot import name 'LOG' from tldextract") so it
+        # fail-fasted every run, and it's fully redundant with gotator + dnsgen,
+        # which generate the same permutation space and actually work.
         words = cfg.path("wordlists/permutation-words.txt")
+        gen_tasks = [partial(rs2.dnsgen, ctx, perms_in, sub_dir / "dnsgen_perms.txt")]
         if words.exists():
-            # altdns was dropped here: it's broken upstream against modern
-            # tldextract ("cannot import name 'LOG' from tldextract.tldextract")
-            # so it fail-fasted on every single run, and it's fully redundant
-            # with gotator + dnsgen, which generate the same permutation space
-            # and actually work. Nothing of value is lost by removing it.
-            rs2.gotator(ctx, perms_in, sub_dir / "gotator_perms.txt", words)
-            rs2.puredns_resolve(ctx, sub_dir / "gotator_perms.txt", resolvers, sub_dir / "gotator_resolved.txt")
+            gen_tasks.append(partial(rs2.gotator, ctx, perms_in,
+                                     sub_dir / "gotator_perms.txt", words))
+        run_parallel(gen_tasks, max_workers=cfg.general.max_parallel_tools,
+                     label="block1 permutation gen")
+
+        rs2.puredns_resolve(ctx, sub_dir / "dnsgen_perms.txt", resolvers,
+                            sub_dir / "perms_resolved.txt")
+        if (sub_dir / "gotator_perms.txt").exists():
+            rs2.puredns_resolve(ctx, sub_dir / "gotator_perms.txt", resolvers,
+                                sub_dir / "gotator_resolved.txt")
 
         # feed brute-force + permutation discoveries back into the pipeline
         # (guide's self-learning principle: every found artifact returns to
