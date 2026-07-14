@@ -18,9 +18,18 @@ def aws_s3_ls(ctx: ToolContext, bucket: str, out: Path) -> bool:
 
 
 def s3scanner(ctx: ToolContext, bucket_list: Path, out: Path) -> Optional[Path]:
-    cmd = ["S3Scanner", "--bucket-list", str(bucket_list), "--out", str(out)]
-    r = ctx.execute("S3Scanner", cmd, timeout=600)
-    return out if out.exists() else None
+    # The modern Go s3scanner (sa7mon/s3scanner, what install.sh builds via
+    # `go install`) installs as lowercase `s3scanner`, takes `-bucket-file`
+    # (single dash), and prints results to stdout -- it has no `--out`. The
+    # old `S3Scanner --bucket-list --out` invocation matched the retired
+    # Python tool and failed every run with "[skip] binary not found:
+    # S3Scanner", so bucket scanning never actually ran.
+    cmd = ["s3scanner", "-bucket-file", str(bucket_list)]
+    r = ctx.execute("s3scanner", cmd, timeout=600, log_stdout=False)
+    if r.ok and r.stdout.strip():
+        out.write_text(r.stdout, encoding="utf-8")
+        return out
+    return None
 
 
 def cloud_enum(ctx: ToolContext, keyword: str, out: Path) -> Optional[Path]:
