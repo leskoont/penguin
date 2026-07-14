@@ -1,8 +1,10 @@
 """Per-block Rich progress spinner for `penguin run`/`penguin tui`."""
 from __future__ import annotations
 
+import time
+
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 BLOCK_LABELS = {
     1: "Block 1: infra recon",
@@ -37,9 +39,30 @@ class RichBlockProgress:
 
 
 def refresh_proxy_pool(pool, console: Console, force: bool = True):
-    """Refresh the proxy pool behind a status spinner. Validating hundreds
-    of free-proxy candidates against a live endpoint can take minutes with
-    no other output in between, which otherwise looks like a hang."""
-    # spinner="line" for the same cp1251-safety reason as RichBlockProgress.
-    with console.status("[cyan]refreshing proxy pool...[/]", spinner="line"):
-        return pool.refresh(force=force)
+    """Refresh the proxy pool behind a live N/total progress bar. Validating
+    hundreds of free-proxy candidates against a live endpoint can take
+    minutes with no other output in between, which otherwise looks like a
+    hang.
+
+    Updates are driven with an explicit refresh=True on the calling
+    (main) thread rather than relying on Progress's own background
+    auto-refresh thread: with 50 concurrent validation worker threads
+    hammering the GIL, that background thread can get starved badly enough
+    on some setups that the spinner never visibly moves.
+    """
+    progress = Progress(SpinnerColumn(spinner_name="line"), TextColumn("{task.description}"),
+                         BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(), console=console)
+    last_refresh = 0.0
+    with progress:
+        task_id = progress.add_task("[cyan]acquiring proxy candidates...[/]", total=None)
+
+        def _cb(done: int, total: int) -> None:
+            nonlocal last_refresh
+            now = time.monotonic()
+            force_refresh = now - last_refresh > 0.1 or done == total
+            if force_refresh:
+                last_refresh = now
+            progress.update(task_id, description="[cyan]validating proxies...[/]",
+                             completed=done, total=total, refresh=force_refresh)
+
+        return pool.refresh(force=force, progress_cb=_cb)

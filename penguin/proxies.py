@@ -118,28 +118,39 @@ class ProxyPool:
             return None
         return None
 
-    def validate(self, proxies: list[Proxy]) -> list[Proxy]:
+    def validate(self, proxies: list[Proxy], progress_cb=None) -> list[Proxy]:
         import concurrent.futures
 
         valid: list[Proxy] = []
         test_url = self.cfg.test_url
         timeout = self.cfg.timeout
+        total = len(proxies)
+        done = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=50) as ex:
             futs = {ex.submit(self._validate_one, p, test_url, timeout): p for p in proxies}
             for fut in concurrent.futures.as_completed(futs):
                 res = fut.result()
                 if res:
                     valid.append(res)
+                done += 1
+                if progress_cb:
+                    # Runs on the main thread (the as_completed loop), so it
+                    # keeps redrawing even when the 50 validation workers
+                    # are busy enough to starve a background refresh thread.
+                    try:
+                        progress_cb(done, total)
+                    except Exception:  # noqa
+                        pass
         valid.sort(key=lambda p: p.latency)
         return valid
 
     # ---------- refresh ----------
-    def refresh(self, force: bool = False) -> list[Proxy]:
+    def refresh(self, force: bool = False, progress_cb=None) -> list[Proxy]:
         if self._pool and not force:
             return self._pool
         candidates = self.acquire()
         if self.cfg.validate:
-            valid = self.validate(candidates)
+            valid = self.validate(candidates, progress_cb=progress_cb)
         else:
             valid = candidates
         with self._lock:
