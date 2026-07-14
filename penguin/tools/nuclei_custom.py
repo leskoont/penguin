@@ -20,3 +20,14 @@ def nuclei_scan(ctx: ToolContext, in_file: Path, out: Path, *,
         cmd += ["-t", "cves/", "-t", "misconfigurations/", "-t", str(ctx.cfg.path(TEMPLATES_DIR))]
     r = ctx.execute("nuclei", cmd, timeout=3600, log_stdout=False)
     return out if out.exists() else None
+
+
+def nuclei_update(ctx: ToolContext) -> bool:
+    # ctx.execute's first arg is only the proxy/threads lookup key -- the
+    # actual argv is the second arg and must include the binary name itself.
+    # Without it, runner.run() took "-update-templates" as cmd[0], couldn't
+    # find that "binary" on PATH, and skipped -- so the official templates
+    # dir (needed by probe.nuclei_tech's -t technologies/) was never fetched
+    # and its scans always failed with "Could not find template".
+    r = ctx.execute("nuclei", ["nuclei", "-update-templates"], timeout=300)
+    return r.ok

@@ -11,6 +11,7 @@ from ..tools import content as ct
 from ..tools import probe as pb
 from ..tools import secrets as sc
 from ..tools import api as ap
+from ..tools import nuclei_custom as nu
 from ..tools._base import ToolContext
 
 logger = logging.getLogger("penguin.block2")
@@ -39,6 +40,11 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     hosts_file.write_text("\n".join(hosts) + "\n", encoding="utf-8")
 
     # ---- tech fingerprint already in httpx; add nuclei tech ----
+    # nuclei_tech's -t technologies/ needs the official templates repo, which
+    # only custom_only=False scans would otherwise trigger -- block4's
+    # nuclei_scan is always custom_only=True, so this is the one remaining
+    # call site that needs it fetched first (best-effort).
+    nu.nuclei_update(ctx)
     pb.nuclei_tech(ctx, hosts_file, state.path("technologies.txt"))
 
     # ---- collect JS ----
