@@ -8,7 +8,12 @@ from ._base import ToolContext
 
 
 def linkfinder(ctx: ToolContext, js_file: Path, out: Path) -> Optional[Path]:
-    cmd = ["python3", "linkfinder.py", "-i", str(js_file), "-o", "cli"]
+    # install.sh installs linkfinder as a standalone wrapper binary on PATH
+    # (a shim that execs its own venv python against the script's absolute
+    # path) -- invoking "python3 linkfinder.py" as a relative filename only
+    # ever worked if the CWD happened to contain a checkout of the repo,
+    # which it doesn't, hence "No such file or directory" every run.
+    cmd = ["linkfinder", "-i", str(js_file), "-o", "cli"]
     r = ctx.execute("linkfinder", cmd, timeout=120)
     if r.ok:
         with open(out, "a", encoding="utf-8") as fh:
@@ -18,7 +23,7 @@ def linkfinder(ctx: ToolContext, js_file: Path, out: Path) -> Optional[Path]:
 
 
 def secretfinder(ctx: ToolContext, js_file: Path, out: Path) -> Optional[Path]:
-    cmd = ["python3", "SecretFinder.py", "-i", str(js_file), "-o", "cli"]
+    cmd = ["SecretFinder", "-i", str(js_file), "-o", "cli"]
     r = ctx.execute("secretfinder", cmd, timeout=120)
     if r.ok:
         with open(out, "a", encoding="utf-8") as fh:
@@ -59,6 +64,8 @@ def github_subdomains(ctx: ToolContext, domain: str, out: Path) -> Optional[Path
 
 
 def gitdumper(ctx: ToolContext, url: str, out_dir: Path) -> Optional[Path]:
-    cmd = ["python3", "gitdumper.py", url, str(out_dir)]
+    # gitdumper is GitTools' gitdumper.sh (bash, not Python), installed as a
+    # standalone wrapper binary on PATH -- not a script to invoke via python3.
+    cmd = ["gitdumper", url, str(out_dir)]
     r = ctx.execute("gitdumper", cmd, timeout=300)
     return out_dir if out_dir.exists() else None
