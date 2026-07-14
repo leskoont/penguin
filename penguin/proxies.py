@@ -222,6 +222,11 @@ def get_pool(cfg: Config) -> ProxyPool:
     global _pool
     if _pool is None:
         _pool = ProxyPool(cfg)
-        if cfg.proxies.enabled:
-            _pool.refresh()
+        # No eager refresh here: every CLI call site refreshes explicitly
+        # right after get_pool() (behind a visible progress bar via
+        # ui.progress.refresh_proxy_pool). An eager refresh here used to
+        # run first, silently, with no progress feedback at all -- so the
+        # first several minutes of every run showed nothing, and by the
+        # time the visible progress bar appeared it was already
+        # revalidating the same pool a second time.
     return _pool
