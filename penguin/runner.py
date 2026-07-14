@@ -57,7 +57,7 @@ _PERMANENT_ERR_SUBSTRINGS = (
     "flag provided but not defined",
     "unknown shorthand flag",
     "unrecognized arguments",
-    "executable file not found in $PATH",
+    "executable file not found in $path",
     "modulenotfounderror",
     "traceback (most recent call last)",
     "does not support the reflection api",
