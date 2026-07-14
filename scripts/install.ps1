@@ -21,7 +21,17 @@ New-Item -ItemType Directory -Force -Path wordlists, results/proxies, reports | 
 # the assetnote us_subdomains/kite CDN paths and the httprobe resolvers.txt all
 # 404'd, which starved puredns/ffuf and fed massdns a bogus resolvers file).
 Fetch "https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt" "wordlists/resolvers.txt"
-Fetch "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-110000.txt" "wordlists/subdomains-large.txt"
+# 20k (not 110k): puredns bruteforce ran past its 1200s timeout on the full
+# 110k list and contributed nothing; the 20k list resolves ~5x faster and
+# completes within the timeout while still covering the high-value names.
+# One-time migration: Fetch skips any file >=1 KB, so an already-cached 2 MB
+# 110k copy under this same filename would survive forever and silently defeat
+# the shrink -- drop any oversized (>512 KB) legacy copy to force the 20k list.
+if ((Test-Path "wordlists/subdomains-large.txt") -and ((Get-Item "wordlists/subdomains-large.txt").Length -gt 512000)) {
+    Write-Warning "  ! subdomains-large.txt: dropping oversized legacy 110k list, refetching 20k"
+    Remove-Item "wordlists/subdomains-large.txt" -Force
+}
+Fetch "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-20000.txt" "wordlists/subdomains-large.txt"
 Fetch "https://raw.githubusercontent.com/3ndG4me/KaliLists/master/dirbuster/directory-list-2.3-medium.txt" "wordlists/directory-list-2.3-medium.txt"
 Fetch "https://raw.githubusercontent.com/infosec-au/altdns/master/words.txt" "wordlists/permutation-words.txt"
 Fetch "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/burp-parameter-names.txt" "wordlists/params.txt"

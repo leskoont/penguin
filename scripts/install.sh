@@ -293,7 +293,18 @@ fetch_kite() {
 }
 
 fetch_wordlist wordlists/resolvers.txt https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt "resolvers (trickest)"
-fetch_wordlist wordlists/subdomains-large.txt https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-110000.txt "subdomains-large (SecLists 110k)"
+# 20k (not 110k): puredns bruteforce ran past its 1200s timeout on the full
+# 110k list and contributed nothing; the 20k list resolves ~5x faster and
+# completes within the timeout while still covering the high-value names.
+# One-time migration: fetch_wordlist's size guard only refetches tiny/error
+# files, so an already-cached 2 MB 110k copy under this same filename would
+# survive forever and silently defeat the shrink -- drop any oversized
+# (>512 KB) legacy copy here to force the 20k list (~135 KB).
+if [ -f wordlists/subdomains-large.txt ] && [ "$(wc -c < wordlists/subdomains-large.txt 2>/dev/null || echo 0)" -gt 512000 ]; then
+  log "  ! subdomains-large.txt: dropping oversized legacy 110k list, refetching 20k"
+  rm -f wordlists/subdomains-large.txt
+fi
+fetch_wordlist wordlists/subdomains-large.txt https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-20000.txt "subdomains-large (SecLists 20k)"
 fetch_wordlist wordlists/directory-list-2.3-medium.txt https://raw.githubusercontent.com/3ndG4me/KaliLists/master/dirbuster/directory-list-2.3-medium.txt "directory wordlist (dirbuster)"
 fetch_kite
 fetch_wordlist wordlists/permutation-words.txt https://raw.githubusercontent.com/infosec-au/altdns/master/words.txt "permutation words (altdns)"
