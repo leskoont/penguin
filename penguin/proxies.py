@@ -126,21 +126,41 @@ class ProxyPool:
         timeout = self.cfg.timeout
         total = len(proxies)
         done = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as ex:
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=50)
+        try:
             futs = {ex.submit(self._validate_one, p, test_url, timeout): p for p in proxies}
-            for fut in concurrent.futures.as_completed(futs):
-                res = fut.result()
-                if res:
-                    valid.append(res)
-                done += 1
-                if progress_cb:
-                    # Runs on the main thread (the as_completed loop), so it
-                    # keeps redrawing even when the 50 validation workers
-                    # are busy enough to starve a background refresh thread.
-                    try:
-                        progress_cb(done, total)
-                    except Exception:  # noqa
-                        pass
+            pending = set(futs)
+            while pending:
+                # Poll with a short timeout instead of an unbounded
+                # as_completed()/wait(): on Windows, Ctrl+C only gets
+                # processed when control returns to the interpreter loop, and
+                # a blocking wait with no timeout never returns it, so
+                # SIGINT is swallowed until every proxy finishes validating.
+                finished, pending = concurrent.futures.wait(
+                    pending, timeout=0.5, return_when=concurrent.futures.FIRST_COMPLETED
+                )
+                for fut in finished:
+                    res = fut.result()
+                    if res:
+                        valid.append(res)
+                    done += 1
+                    if progress_cb:
+                        # Runs on the main thread (this loop), so it keeps
+                        # redrawing even when the 50 validation workers are
+                        # busy enough to starve a background refresh thread.
+                        try:
+                            progress_cb(done, total)
+                        except Exception:  # noqa
+                            pass
+        except BaseException:
+            # Drop not-yet-started work immediately so shutdown doesn't wait
+            # for all ~4500 candidates; already-running requests still get
+            # up to `timeout` seconds to unwind cleanly below.
+            for fut in futs:
+                fut.cancel()
+            raise
+        finally:
+            ex.shutdown(wait=True)
         valid.sort(key=lambda p: p.latency)
         return valid
 
