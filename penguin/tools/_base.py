@@ -59,7 +59,6 @@ class ToolContext:
                 proxy: Optional[bool] = None):
         to = timeout or self.cfg.general.timeout
         env = {**os.environ, **extra_env} if extra_env else None
-        n = max(1, retries if retries is not None else self.cfg.general.retry_attempts)
         backoff = self.cfg.general.retry_backoff
 
         # ``proxy`` lets a caller force-disable proxying for a specific call even
@@ -68,8 +67,21 @@ class ToolContext:
         # and simply don't survive the free SOCKS pool.
         use_proxy = self.proxy_applies(tool) if proxy is None else (proxy and self.cfg.proxies.enabled)
         if not use_proxy:
+            # Retries in this codebase exist for exactly one reason: to re-pick a
+            # fresh proxy between attempts (the loop below). An un-proxied tool
+            # gets no benefit from that -- a *hard* failure already fail-fasts in
+            # run() (permanent-error detection), and the only thing left to retry
+            # is a *timeout*, which just gets replayed at full length. So the
+            # default 3 attempts turn a tool with timeout=1800 into 90 min of dead
+            # wall-clock for a result that was final on attempt 1 -- the retry
+            # storms observed live across gotator/trufflehog/masscan/feroxbuster/
+            # kr/etc. Un-proxied tools therefore run *once* unless a caller
+            # explicitly asks for more (e.g. crt.sh, a flaky public aggregator
+            # where a genuine transient can clear on a second direct request).
+            n = max(1, retries) if retries is not None else 1
             return run(cmd, retries=n, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env, input=input)
 
+        n = max(1, retries if retries is not None else self.cfg.general.retry_attempts)
         # Proxy-routed tools: a dead/broken proxy (e.g. curl exit=97
         # CURLE_PROXY) fails identically every time, so retrying the *same*
         # picked proxy n times just burns the backoff delay on a guaranteed

@@ -79,7 +79,11 @@ def crtsh(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     # source contributed zero names in every observed run. Query it directly,
     # consistent with findomain/assetfinder which already run un-proxied. The
     # 90s timeout accommodates crt.sh being slow for domains with many certs.
-    r = ctx.execute("curl", cmd, timeout=90, proxy=False)
+    # retries=2: un-proxied calls now default to a single attempt (see
+    # _base.execute), but crt.sh is the single richest passive source *and* a
+    # notoriously flaky public aggregator (transient 502/503/timeout), so it's
+    # worth one extra direct attempt -- bounded, not the old 3x proxy budget.
+    r = ctx.execute("curl", cmd, timeout=90, proxy=False, retries=2)
     if not r.ok:
         return None
     import json
