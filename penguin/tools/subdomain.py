@@ -72,14 +72,28 @@ def chaos(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
 
 def crtsh(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     cmd = ["curl", "-s", f"https://crt.sh/?q=%25.{domain}&output=json"]
-    r = ctx.execute("curl", cmd, timeout=60)
+    # crt.sh is a public certificate-transparency aggregator (passive OSINT --
+    # the query hits crt.sh, never the target), and it flat-out does not work
+    # through the free SOCKS proxy pool: every attempt died with curl exit 97
+    # (proxy closed connection) / 35 (SSL), so this normally-richest passive
+    # source contributed zero names in every observed run. Query it directly,
+    # consistent with findomain/assetfinder which already run un-proxied. The
+    # 90s timeout accommodates crt.sh being slow for domains with many certs.
+    r = ctx.execute("curl", cmd, timeout=90, proxy=False)
     if not r.ok:
         return None
     import json
 
     try:
         data = json.loads(r.stdout)
-        names = {n["name_value"].replace("*.", "") for n in data if "name_value" in n}
+        # a single crt.sh entry's name_value can carry several newline-separated
+        # SANs, so split before deduping instead of storing the blob verbatim.
+        names: set[str] = set()
+        for n in data:
+            for nm in n.get("name_value", "").splitlines():
+                nm = nm.strip().replace("*.", "")
+                if nm:
+                    names.add(nm)
         out.write_text("\n".join(sorted(names)) + "\n", encoding="utf-8")
         return out
     except Exception:

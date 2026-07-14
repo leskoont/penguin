@@ -55,13 +55,19 @@ class ToolContext:
         return mapping.get(tool, [])
 
     def execute(self, tool: str, cmd: list, *, timeout: Optional[float] = None, log_stdout: bool = False,
-                extra_env: Optional[dict] = None, retries: Optional[int] = None, input: Optional[str] = None):
+                extra_env: Optional[dict] = None, retries: Optional[int] = None, input: Optional[str] = None,
+                proxy: Optional[bool] = None):
         to = timeout or self.cfg.general.timeout
         env = {**os.environ, **extra_env} if extra_env else None
         n = max(1, retries if retries is not None else self.cfg.general.retry_attempts)
         backoff = self.cfg.general.retry_backoff
 
-        if not self.proxy_applies(tool):
+        # ``proxy`` lets a caller force-disable proxying for a specific call even
+        # though the tool is proxy-eligible in config -- used by passive OSINT
+        # lookups (e.g. crt.sh) that hit a public aggregator, not the target,
+        # and simply don't survive the free SOCKS pool.
+        use_proxy = self.proxy_applies(tool) if proxy is None else (proxy and self.cfg.proxies.enabled)
+        if not use_proxy:
             return run(cmd, retries=n, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env, input=input)
 
         # Proxy-routed tools: a dead/broken proxy (e.g. curl exit=97
