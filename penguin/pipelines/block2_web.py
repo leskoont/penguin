@@ -56,9 +56,10 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     for h in hosts:
         dom = re.sub(r"^https?://", "", h).split("/")[0]
         r = ct.gau(ctx, dom, js_dir / f"gau_{dom}.txt")
-        r = ct.katana(ctx, hosts_file, js_dir / f"katana_{dom}.txt")
         r = ct.waybackurls(ctx, dom, js_dir / f"wb_{dom}.txt")
         ct.paramspider(ctx, dom, js_dir / f"paramspider_{dom}.txt")
+    # katana takes -list of all hosts in one shot, not per-host
+    ct.katana(ctx, hosts_file, js_dir / "katana.txt")
     ct.hakrawler(ctx, hosts_file, js_dir / "hakrawler.txt")
     for f in js_dir.glob("*.txt"):
         for l in f.read_text(encoding="utf-8").splitlines():
