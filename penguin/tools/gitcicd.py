@@ -13,8 +13,12 @@ def exposed_git_probe(ctx: ToolContext, subs_file: Path, out: Path) -> Optional[
         sub = sub.strip()
         if not sub:
             continue
-        cmd = ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", f"https://{sub}/.git/HEAD"]
-        r = ctx.execute("curl", cmd, timeout=30)
+        # -k: cert trust doesn't matter for a read-only probe. retries=1:
+        # this runs once per resolved subdomain, so a single default retry
+        # budget (3x, with backoff) per host multiplies into a lot of wasted
+        # time across dozens of hosts for what's just a speculative check.
+        cmd = ["curl", "-sk", "-o", "/dev/null", "-w", "%{http_code}", f"https://{sub}/.git/HEAD"]
+        r = ctx.execute("curl", cmd, timeout=30, retries=1)
         if r.ok and "200" in r.stdout:
             found.append(sub)
     if found:
@@ -24,8 +28,8 @@ def exposed_git_probe(ctx: ToolContext, subs_file: Path, out: Path) -> Optional[
 
 
 def docker_registry_catalog(ctx: ToolContext, registry: str, out: Path) -> Optional[Path]:
-    cmd = ["curl", "-s", f"https://{registry}/v2/_catalog"]
-    r = ctx.execute("curl", cmd, timeout=60)
+    cmd = ["curl", "-sk", f"https://{registry}/v2/_catalog"]
+    r = ctx.execute("curl", cmd, timeout=60, retries=1)
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out

@@ -16,8 +16,11 @@ SWAGGER_PATHS = [
 def probe_swagger(ctx: ToolContext, base_url: str, out: Path) -> Optional[Path]:
     found = []
     for path in SWAGGER_PATHS:
-        cmd = ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", f"{base_url}{path}"]
-        r = ctx.execute("curl", cmd, timeout=30)
+        # -k: cert trust doesn't matter for a read-only probe. retries=1:
+        # called once per host over 13 speculative paths -- the default 3x
+        # retry budget per path multiplies fast across hosts.
+        cmd = ["curl", "-sk", "-o", "/dev/null", "-w", "%{http_code}", f"{base_url}{path}"]
+        r = ctx.execute("curl", cmd, timeout=30, retries=1)
         if r.ok and "200" in r.stdout:
             found.append(path)
     if found:
@@ -27,9 +30,9 @@ def probe_swagger(ctx: ToolContext, base_url: str, out: Path) -> Optional[Path]:
 
 
 def graphql_introspection(ctx: ToolContext, endpoint: str, out: Path) -> Optional[Path]:
-    cmd = ["curl", "-s", "-X", "POST", endpoint, "-H", "Content-Type: application/json",
+    cmd = ["curl", "-sk", "-X", "POST", endpoint, "-H", "Content-Type: application/json",
            "-d", '{"query":"{__schema{queryType{name}mutationType{name}types{name}}}"}']
-    r = ctx.execute("curl", cmd, timeout=60)
+    r = ctx.execute("curl", cmd, timeout=60, retries=1)
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out

@@ -23,7 +23,7 @@ def dig_resolve(ctx: ToolContext, host: str, resolver: str, out: Path) -> Option
 
 
 def cloudflare_trace(ctx: ToolContext, url: str, out: Path) -> Optional[Path]:
-    cmd = ["curl", "-s", f"{url}/cdn-cgi/trace"]
+    cmd = ["curl", "-sk", f"{url}/cdn-cgi/trace"]
     r = ctx.execute("curl", cmd, timeout=30)
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
@@ -46,7 +46,7 @@ def historical_dns_securitytrails(ctx: ToolContext, domain: str, out: Path) -> O
 
 
 def viewdns_history(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
-    cmd = ["curl", "-s", f"https://viewdns.info/iphistory/?domain={domain}",
+    cmd = ["curl", "-sk", f"https://viewdns.info/iphistory/?domain={domain}",
            "-H", "User-Agent: Mozilla/5.0"]
     r = ctx.execute("curl", cmd, timeout=60)
     if r.ok:

@@ -31,8 +31,13 @@ def cloud_enum(ctx: ToolContext, keyword: str, out: Path) -> Optional[Path]:
 
 def azure_probe(ctx: ToolContext, account: str, out: Path) -> bool:
     url = f"https://{account}.blob.core.windows.net?restype=container&comp=list"
-    cmd = ["curl", "-s", url]
-    r = ctx.execute("curl", cmd, timeout=60)
+    # -k: cert trust doesn't matter for a read-only probe against a
+    # speculative account name. retries=1: these run in a loop over several
+    # generated candidates per target, most of which don't resolve
+    # (CURLE_COULDNT_RESOLVE_HOST) -- fail-fast already stops retries on that,
+    # but skip the retry budget entirely rather than relying on it per-call.
+    cmd = ["curl", "-sk", url]
+    r = ctx.execute("curl", cmd, timeout=60, retries=1)
     if r.ok and "<Name>" in r.stdout:
         with open(out, "a", encoding="utf-8") as fh:
             fh.write(f"[FOUND] Azure: {account}\n")
@@ -42,8 +47,8 @@ def azure_probe(ctx: ToolContext, account: str, out: Path) -> bool:
 
 def gcs_probe(ctx: ToolContext, bucket: str, out: Path) -> bool:
     url = f"https://storage.googleapis.com/{bucket}"
-    cmd = ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", url]
-    r = ctx.execute("curl", cmd, timeout=60)
+    cmd = ["curl", "-sk", "-o", "/dev/null", "-w", "%{http_code}", url]
+    r = ctx.execute("curl", cmd, timeout=60, retries=1)
     if r.ok and "200" in r.stdout:
         with open(out, "a", encoding="utf-8") as fh:
             fh.write(f"[FOUND] GCS: {bucket}\n")
