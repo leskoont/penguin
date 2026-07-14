@@ -23,5 +23,10 @@ def nuclei_scan(ctx: ToolContext, in_file: Path, out: Path, *,
 
 
 def nuclei_update(ctx: ToolContext) -> bool:
-    r = ctx.execute("nuclei", ["-update-templates"], timeout=300)
+    # ctx.execute's first arg is only the proxy/threads lookup key -- the
+    # actual argv is the second arg and must include the binary name itself.
+    # Without it, runner.run() took "-update-templates" as cmd[0], couldn't
+    # find that "binary" on PATH, and skipped -- so cves/misconfigurations
+    # templates were never fetched and nuclei_scan's -t lookups always failed.
+    r = ctx.execute("nuclei", ["nuclei", "-update-templates"], timeout=300)
     return r.ok
