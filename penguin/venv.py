@@ -26,6 +26,26 @@ MARKER = VENV / ".penguin_bootstrapped"
 TOOLS_MARKER = VENV / ".penguin_tools_bootstrapped"
 
 
+def _augment_tool_path() -> None:
+    """scripts/install.sh installs recon tools into ~/go/bin, ~/.local/bin
+    and ~/.cargo/bin, and persists those onto PATH via ~/.bashrc -- but a
+    shell that hasn't been reopened/sourced since (e.g. right after this
+    same run just installed Go for the first time) won't see them yet.
+    Prepend them to this process's PATH so install-check and tool execution
+    (runner.py, via inherited PATH) work immediately either way.
+    """
+    if os.name == "nt":
+        return
+    home = Path.home()
+    extra = [home / "go" / "bin", home / ".local" / "bin", home / ".cargo" / "bin"]
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    for d in extra:
+        d = str(d)
+        if d not in parts:
+            parts.insert(0, d)
+    os.environ["PATH"] = os.pathsep.join(parts)
+
+
 def venv_python() -> Path:
     if os.name == "nt":
         return VENV / "Scripts" / "python.exe"
@@ -82,6 +102,7 @@ def _install_tools() -> bool:
 
 
 def ensure_venv(argv=None) -> None:
+    _augment_tool_path()
     if os.environ.get("PENGUIN_NO_VENV"):
         return
     if in_venv():

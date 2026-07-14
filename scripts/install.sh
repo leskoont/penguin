@@ -40,7 +40,6 @@ GO_TOOLS=(
   "github.com/lc/subjs@latest"
   "github.com/ffuf/ffuf@latest"
   "github.com/tomnomnom/httprobe@latest"
-  "github.com/assetnote/kiterunner/cmd/kr@latest"
   "github.com/hakluke/hakrawler@latest"
   "github.com/fullstorydev/grpcurl/cmd/grpcurl@latest"
   "github.com/gwen001/github-subdomains@latest"
@@ -48,6 +47,7 @@ GO_TOOLS=(
   "github.com/BishopFox/jsluice/cmd/jsluice@latest"
   "github.com/redhuntlabs/bucketloot/cmd/bucketloot@latest"
   "github.com/sa7mon/s3scanner@latest"
+  "github.com/gitleaks/gitleaks/v8@latest"
 )
 install_go
 export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
@@ -62,14 +62,43 @@ command -v feroxbuster >/dev/null 2>&1 || {
   sudo apt-get install -y feroxbuster 2>/dev/null || log "  ! feroxbuster: install manually (cargo install feroxbuster, or https://github.com/epi052/feroxbuster/releases)"
 }
 
-# x8 is Rust too.
+# x8 is Rust too. Prefer cargo; fall back to the prebuilt release binary
+# (upstream ships no arm64 build, so that fallback is amd64-only).
 command -v x8 >/dev/null 2>&1 || {
   if command -v cargo >/dev/null 2>&1; then
     log "installing x8 via cargo"
     cargo install x8 2>/dev/null || log "  ! x8: cargo install failed"
+  elif [ "$(uname -m)" = "x86_64" ]; then
+    log "installing x8 (prebuilt release, no cargo found)"
+    mkdir -p "$HOME/go/bin"
+    curl -sL https://github.com/Sh1Yo/x8/releases/latest/download/x86_64-linux-x8.gz -o /tmp/x8.gz \
+      && gunzip -f /tmp/x8.gz \
+      && install -m 0755 /tmp/x8 "$HOME/go/bin/x8" \
+      || log "  ! x8: prebuilt download failed"
+    rm -f /tmp/x8.gz /tmp/x8
   else
     log "  ! x8: needs Rust/cargo (not installed) -- see https://github.com/Sh1Yo/x8#installation"
   fi
+}
+
+# kiterunner ships no go-installable target at all -- upstream's own README
+# only documents `make build` or downloading a prebuilt release binary, so
+# `go install .../cmd/kr@latest` (the previous approach here) could never
+# succeed. Grab the release tarball directly instead.
+command -v kr >/dev/null 2>&1 || {
+  KR_ARCH=$(uname -m); case "$KR_ARCH" in x86_64) KR_ARCH=amd64;; aarch64) KR_ARCH=arm64;; esac
+  case "$KR_ARCH" in
+    amd64|arm64)
+      log "installing kr (kiterunner prebuilt release, linux_$KR_ARCH)"
+      mkdir -p "$HOME/go/bin"
+      curl -sL "https://github.com/assetnote/kiterunner/releases/download/v1.0.2/kiterunner_1.0.2_linux_${KR_ARCH}.tar.gz" -o /tmp/kr.tar.gz \
+        && tar -xzf /tmp/kr.tar.gz -C /tmp kr \
+        && install -m 0755 /tmp/kr "$HOME/go/bin/kr" \
+        || log "  ! kr: download/extract failed"
+      rm -f /tmp/kr.tar.gz /tmp/kr
+      ;;
+    *) log "  ! kr: unsupported arch $(uname -m), skipping" ;;
+  esac
 }
 
 # ---- pip/pipx python tools (real PyPI packages) ----
@@ -80,9 +109,9 @@ log "pip install core python deps"
 # (pipx tools + wordlists below) -- penguin's own deps are installed
 # separately into .venv/ by penguin/venv.py, so this system-wide install is
 # best-effort only.
-python3 -m pip install --upgrade pip || true
-python3 -m pip install -r requirements.txt || true
-for m in trufflehog gitleaks dnsgen arjun; do
+python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
+python3 -m pip install -r requirements.txt >/dev/null 2>&1 || log "  (skipped: PEP 668 externally-managed-environment or offline)"
+for m in trufflehog dnsgen arjun; do
   command -v "$m" >/dev/null 2>&1 || { log "  installing $m via pipx"; pipx install "$m" 2>/dev/null || log "  ! $m not installed"; }
 done
 # py-altdns publishes under a different PyPI name than its binary
