@@ -7,6 +7,7 @@ structured logging. This is the engineering answer to the guide's call for
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -14,6 +15,16 @@ from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("penguin.runner")
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _clean_err(text: str) -> str:
+    """Strip ANSI color codes. Tools like nuclei/kr print a multi-line ASCII
+    banner to stderr before the real error, so logging the *first* N chars
+    (the old behavior) only ever showed banner noise -- callers should slice
+    from the end instead, where the actual message lives."""
+    return _ANSI_RE.sub("", text).strip()
 
 
 @dataclass
@@ -111,8 +122,8 @@ def run(
                 if log_stdout:
                     logger.debug("stdout[%s]: %s", binary, proc.stdout[:500])
                 return RunResult(cmd, proc.returncode, proc.stdout, proc.stderr, attempts, time.time() - start, True)
-            last_err = proc.stderr.strip() or f"exit={proc.returncode}"
-            logger.warning("[retry %d/%d] %s -> %s", attempts, retries, binary, last_err[:200])
+            last_err = _clean_err(proc.stderr) or f"exit={proc.returncode}"
+            logger.warning("[retry %d/%d] %s -> %s", attempts, retries, binary, last_err[-200:])
             if is_permanent(binary, proc.returncode, last_err):
                 logger.warning("[fail-fast] %s -> permanent failure, not retrying", binary)
                 break
