@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..parallel import run_parallel
-from ..state import RunState
+from ..state import ARTIFACTS, RunState
 from ..tools import subdomain as sd
 from ..tools import resolve as rs
 from ..tools import probe as pb
@@ -148,7 +148,7 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     results["subdomains"] = sorted(raw_lines)
 
     # ---- resolve + probe ----
-    resolved_file = state.path("resolved.txt")
+    resolved_file = state.path(ARTIFACTS.RESOLVED)
     if resolvers.exists():
         rs.puredns_resolve(ctx, all_raw, resolvers, resolved_file)
         rs.dnsx(ctx, all_raw, resolvers, state.path("resolved_dnsx.txt"))
@@ -156,15 +156,14 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     else:
         logger.warning("[block1] no resolvers file; skipping active resolution")
 
-    live_csv = state.path("live", run=True) / "httpx.csv"
-    live_csv.parent.mkdir(parents=True, exist_ok=True)
+    live_csv = state.path(ARTIFACTS.LIVE_HTTPX_CSV)
     # -screenshot makes httpx shell out to go-rod, which needs a real Chrome
     # binary and will try (and, offline/sandboxed, fail) to auto-download
     # one -- only pay that cost when screenshots are actually wanted.
     shots_dir = state.path("screenshots", run=True) if ctx.cfg.general.screenshots else None
     pb.httpx(ctx, resolved_file if resolved_file.exists() else all_raw, live_csv,
              screenshots_dir=shots_dir)
-    results["resolved"] = state.read_lines("resolved.txt")
+    results["resolved"] = state.read_lines(ARTIFACTS.RESOLVED)
     if live_csv.exists():
-        results["live"] = state.read_lines("live/httpx.csv")
+        results["live"] = state.read_lines(ARTIFACTS.LIVE_HTTPX_CSV)
     return results

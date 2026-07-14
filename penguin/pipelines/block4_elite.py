@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..parallel import run_parallel
-from ..state import RunState
+from ..state import ARTIFACTS, RunState
 from ..tools import origin as og
 from ..tools import gitcicd as gc
 from ..tools import secrets as sc
@@ -75,7 +75,7 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
     # here (not block1) per its git-secret-scanner module (Block 4.2)
     sc.github_subdomains(ctx, domain, state.path("gitcicd/github_subdomains.txt"))
 
-    subs_file = state.path("resolved.txt")
+    subs_file = state.path(ARTIFACTS.RESOLVED)
     if subs_file.exists():
         exposed = gc.exposed_git_probe(ctx, subs_file, state.path("gitcicd/exposed_git.txt"))
         if exposed:
@@ -109,7 +109,7 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
                                registry_dir / f"trivy_{repo.replace('/', '_')}.json")
 
     # ---- custom nuclei templates on live hosts ----
-    live_hosts = state.path("live_hosts.txt")
+    live_hosts = state.path(ARTIFACTS.LIVE_HOSTS)
     if live_hosts.exists():
         nu.nuclei_scan(ctx, live_hosts, state.path("vulns/nuclei_custom.json"),
                        custom_only=True, rate_limit=cfg.general.rate_limit, concurrency=40)

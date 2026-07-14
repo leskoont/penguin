@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..parallel import run_parallel
-from ..state import RunState
+from ..state import ARTIFACTS, RunState
 from ..tools import ports as pt
 from ..tools import cloud as cl
 from ..tools import resolve as rs
@@ -30,14 +30,14 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
     domain = re.sub(r"^https?://", "", value).split("/")[0]
 
     # ---- open DB scan (masscan over prefixes if cidr, else over live hosts) ----
-    hosts = state.read_lines("resolved.txt") or state.read_lines("live/httpx.csv")
+    hosts = state.read_lines(ARTIFACTS.RESOLVED) or state.read_lines(ARTIFACTS.LIVE_HTTPX_CSV)
     if hosts:
         ip_file = state.path("db_hosts.txt")
         ip_re = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
         # resolved.txt (puredns resolve -w) holds hostnames, not IPs -- pull any
         # literal IPs directly (e.g. cidr/ip targets), then resolve the rest via dnsx
         ips: set[str] = {h.strip() for h in hosts[:200] if ip_re.match(h.strip())}
-        resolved_txt = state.path("resolved.txt")
+        resolved_txt = state.path(ARTIFACTS.RESOLVED)
         resolvers = cfg.path(cfg.general.resolvers_file)
         if resolved_txt.exists() and resolvers.exists():
             dnsx_ips_out = state.path("cloud/db_hosts_dnsx.txt")

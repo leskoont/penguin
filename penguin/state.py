@@ -19,6 +19,49 @@ def _now() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
+class Artifacts:
+    """Central registry of the well-known filenames blocks pass between each
+    other through :class:`RunState`, instead of typed return values.
+
+    Blocks 1-4 and the master pipeline currently hand data forward via *both*
+    an in-memory return dict *and* these on-disk paths (re-read by later
+    blocks/master via ``state.path()`` / ``state.read_lines()``). The
+    filenames used to be duplicated as string literals across
+    ``block1_infra.py``/``block2_web.py``/``block3_cloud_db.py``/
+    ``block4_elite.py``/``master.py``, so a rename in one place could
+    silently break a reader elsewhere. Import and use these constants
+    instead of re-typing the literal.
+
+    All paths are relative to the *run* directory (``RunState.run_dir`` /
+    ``state.path(...)``) unless noted otherwise -- they are per-run
+    artifacts, not accumulators. The one accumulator here (``ALL_*``) lives
+    at the per-target base directory instead (``state.add_lines(...,
+    accumulate=True)``) and must use a filename distinct from any per-run
+    artifact above, so a cross-run history file never shares a name with
+    -- and gets confused for -- a same-run artifact.
+    """
+
+    # block1 -> block3 (hostnames resolved this run, one per line)
+    RESOLVED = "resolved.txt"
+    # block1 -> block2/3 (raw httpx `-csv` output: "url,input,title,...")
+    LIVE_HTTPX_CSV = "live/httpx.csv"
+    # block2 -> block4 (clean http(s)://host URL-per-line, this run only)
+    LIVE_HOSTS = "live_hosts.txt"
+
+    # ---- cross-run accumulators (base dir, not run dir; see add_lines) ----
+    ALL_SUBDOMAINS = "all_subdomains.txt"
+    ALL_URLS = "all_urls.txt"
+    # Deliberately NOT named "live_hosts.txt" -- that name is already the
+    # per-run artifact block2/4 write above; reusing it here for the
+    # cross-run accumulator was the dual-purpose footgun this registry
+    # exists to prevent (see issue: "Implicit file-based contract between
+    # blocks").
+    ALL_LIVE_HOSTS = "all_live_hosts.txt"
+
+
+ARTIFACTS = Artifacts()
+
+
 class RunState:
     def __init__(self, cfg: Config, target: str):
         self.cfg = cfg

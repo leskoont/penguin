@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..parallel import run_parallel
-from ..state import RunState
+from ..state import ARTIFACTS, RunState
 from ..tools import content as ct
 from ..tools import probe as pb
 from ..tools import secrets as sc
@@ -28,7 +28,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         logger.info("[block2] disabled by config")
         return results
 
-    interesting = state.read_lines("live/httpx.csv")
+    interesting = state.read_lines(ARTIFACTS.LIVE_HTTPX_CSV)
     # derive host list from csv (first column = url)
     hosts = []
     for line in interesting:
@@ -38,7 +38,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     if not hosts:
         hosts = [f"https://{target['value']}"]
 
-    hosts_file = state.path("live_hosts.txt")
+    hosts_file = state.path(ARTIFACTS.LIVE_HOSTS)
     hosts_file.write_text("\n".join(hosts) + "\n", encoding="utf-8")
 
     # ---- tech fingerprint already in httpx; add nuclei tech ----

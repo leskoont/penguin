@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from ..config import Config
-from ..state import RunState
+from ..state import ARTIFACTS, RunState
 from ..wordlists import WordlistManager
 from ..notify import notify
 from .block1_infra import run_block1
@@ -101,18 +101,24 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
     # failure here (e.g. a corrupt live/httpx.csv) can't skip diff/notify/
     # archive/report for a target whose blocks otherwise succeeded.
     try:
-        state.add_lines("all_subdomains.txt", b1["subdomains"])
-        state.add_lines("all_urls.txt", b2.get("endpoints", []))
+        state.add_lines(ARTIFACTS.ALL_SUBDOMAINS, b1["subdomains"])
+        state.add_lines(ARTIFACTS.ALL_URLS, b2.get("endpoints", []))
         # live/httpx.csv rows are "url,input,title,..." (httpx -csv output), not
-        # bare URLs -- appending them raw would pollute live_hosts.txt (which
-        # block2/block4 treat as a clean URL-per-line list) with CSV headers and
-        # multi-field rows. Extract just the URL column, same as block2_web.py.
+        # bare URLs -- appending them raw would pollute the accumulator with CSV
+        # headers and multi-field rows. Extract just the URL column, same as
+        # block2_web.py. Use block1's own return value (`b1["live"]`) instead of
+        # re-reading+re-parsing live/httpx.csv from disk -- block1 already read
+        # it once to build that return value.
         live_urls = []
-        for row in state.read_lines("live/httpx.csv"):
+        for row in b1.get("live", []):
             m = re.match(r'"??(https?://[^",]+)', row)
             if m:
                 live_urls.append(m.group(1).strip('"'))
-        state.add_lines("live_hosts.txt", live_urls)
+        # Accumulate under a name distinct from ARTIFACTS.LIVE_HOSTS: that name
+        # is the per-run artifact block2/block4 write fresh each run; reusing it
+        # here for the cross-run accumulator would make one filename mean two
+        # different things depending on which directory you're looking in.
+        state.add_lines(ARTIFACTS.ALL_LIVE_HOSTS, live_urls)
     except Exception:
         logger.exception("[%s] failed to accumulate run history", target["value"])
 
@@ -125,7 +131,7 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
 
     # diff against previous run
     try:
-        diff = state.write_diff_files("all_subdomains.txt")
+        diff = state.write_diff_files(ARTIFACTS.ALL_SUBDOMAINS)
     except Exception:
         logger.exception("[%s] diff engine failed", target["value"])
         diff = {"new": [], "removed": []}
