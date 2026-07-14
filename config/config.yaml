@@ -65,6 +65,7 @@ proxies:
   validate: true
   test_url: "http://example.com"
   timeout: 5
+  validate_workers: 200                # concurrent validation workers (I/O-bound, not CPU-bound)
   protocol_preference: "http"         # http | socks5 | any
   rotate: "roundrobin"                # roundrobin | random | fastest
   pool_file: "results/proxies/proxies_valid.txt"
@@ -74,6 +75,7 @@ paid:
   censys:        {enabled: false, api_id_env: "CENSYS_ID", api_secret_env: "CENSYS_SECRET"}
   securitytrails: {enabled: false, api_key_env: "SECURITYTRAILS_KEY"}
   chaos:         {enabled: false, api_key_env: "CHAOS_KEY"}
+  github:        {enabled: false, api_key_env: "GITHUB_TOKEN"}
   grayhat:       {enabled: false, api_key_env: "GRAYHAT_KEY"}
   netlas:        {enabled: false, api_key_env: "NETLAS_KEY"}
   fofa:          {enabled: false, api_key_env: "FOFA_KEY"}

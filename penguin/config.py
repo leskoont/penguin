@@ -25,6 +25,7 @@ class ProxyConfig:
     validate: bool = True
     test_url: str = "http://example.com"
     timeout: int = 5
+    validate_workers: int = 200
     protocol_preference: str = "http"  # http | socks5 | any
     pool_file: str = "results/proxies/proxies_valid.txt"
     rotate: str = "roundrobin"  # roundrobin | random | fastest
