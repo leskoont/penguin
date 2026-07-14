@@ -53,7 +53,7 @@ _PERMANENT_ERR_SUBSTRINGS = (
 )
 
 
-def _is_permanent(binary: str, returncode: int, err: str) -> bool:
+def is_permanent(binary: str, returncode: int, err: str) -> bool:
     if binary == "curl" and returncode == 6:
         # CURLE_COULDNT_RESOLVE_HOST -- DNS doesn't resolve, never will on retry.
         return True
@@ -113,7 +113,7 @@ def run(
                 return RunResult(cmd, proc.returncode, proc.stdout, proc.stderr, attempts, time.time() - start, True)
             last_err = proc.stderr.strip() or f"exit={proc.returncode}"
             logger.warning("[retry %d/%d] %s -> %s", attempts, retries, binary, last_err[:200])
-            if _is_permanent(binary, proc.returncode, last_err):
+            if is_permanent(binary, proc.returncode, last_err):
                 logger.warning("[fail-fast] %s -> permanent failure, not retrying", binary)
                 break
         except subprocess.TimeoutExpired as exc:

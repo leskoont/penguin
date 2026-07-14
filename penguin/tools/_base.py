@@ -10,11 +10,12 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
 from ..config import Config
-from ..runner import run
+from ..runner import run, is_permanent
 from ..proxies import get_pool
 
 logger = logging.getLogger("penguin.tools")
@@ -24,10 +25,11 @@ class ToolContext:
     def __init__(self, cfg: Config):
         self.cfg = cfg
 
+    def _proxy_applies(self, tool: str) -> bool:
+        return self.cfg.proxies.enabled and bool(self.cfg.tool_setting(tool, "proxy", True))
+
     def proxy_for(self, tool: str) -> Optional[str]:
-        if not self.cfg.proxies.enabled:
-            return None
-        if not self.cfg.tool_setting(tool, "proxy", True):
+        if not self._proxy_applies(tool):
             return None
         pool = get_pool(self.cfg)
         return pool.pick()
@@ -54,15 +56,30 @@ class ToolContext:
 
     def execute(self, tool: str, cmd: list, *, timeout: Optional[float] = None, log_stdout: bool = False,
                 extra_env: Optional[dict] = None, retries: Optional[int] = None, input: Optional[str] = None):
-        proxy = self.proxy_for(tool)
-        if proxy:
-            cmd += self.proxy_flag(tool, proxy)
         to = timeout or self.cfg.general.timeout
-        env = None
-        if extra_env:
-            env = {**os.environ, **extra_env}
-        return run(cmd, retries=retries if retries is not None else self.cfg.general.retry_attempts,
-                   backoff=self.cfg.general.retry_backoff, timeout=to, log_stdout=log_stdout, env=env, input=input)
+        env = {**os.environ, **extra_env} if extra_env else None
+        n = max(1, retries if retries is not None else self.cfg.general.retry_attempts)
+        backoff = self.cfg.general.retry_backoff
+
+        if not self._proxy_applies(tool):
+            return run(cmd, retries=n, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env, input=input)
+
+        # Proxy-routed tools: a dead/broken proxy (e.g. curl exit=97
+        # CURLE_PROXY) fails identically every time, so retrying the *same*
+        # picked proxy n times just burns the backoff delay on a guaranteed
+        # repeat failure. Re-pick a fresh proxy (roundrobin -> next in pool)
+        # before each attempt instead of baking one proxy into the whole
+        # retry loop.
+        result = None
+        for attempt in range(n):
+            proxy = self.proxy_for(tool)
+            full_cmd = list(cmd) + self.proxy_flag(tool, proxy) if proxy else list(cmd)
+            result = run(full_cmd, retries=1, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env, input=input)
+            if result.ok or is_permanent(cmd[0], result.returncode, result.stderr):
+                return result
+            if attempt < n - 1:
+                time.sleep(backoff * (2 ** attempt))
+        return result
 
     def curl_with_secret(self, curl_args: list[str], directives: list[str], *, timeout: Optional[float] = None):
         """Run curl with credentials passed via a temp ``-K`` config file instead of
