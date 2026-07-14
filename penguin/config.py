@@ -65,6 +65,13 @@ class GeneralConfig:
     retry_attempts: int = 3
     retry_backoff: float = 2.0
     screenshots: bool = False
+    # Max independent tool subprocesses to fan out concurrently at the *safe*
+    # parallel points (block1 passive enum, permutation generators, block4
+    # origin discovery). These are network-bound waits on distinct output
+    # files, so overlapping them shortens wall-clock without contending for
+    # CPU. Kept modest by default; raise if the host/network can take it. Set
+    # to 1 to force the old fully-sequential behaviour.
+    max_parallel_tools: int = 8
 
 
 @dataclass
