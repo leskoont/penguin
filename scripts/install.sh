@@ -30,19 +30,17 @@ GO_TOOLS=(
   "github.com/projectdiscovery/httpx/cmd/httpx@latest"
   "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
   "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
-  "github.com/projectdiscovery/puredns/v2/cmd/puredns@latest"
+  "github.com/d3mondev/puredns/v2@latest"
   "github.com/projectdiscovery/katana/cmd/katana@latest"
   "github.com/projectdiscovery/chaos-client/cmd/chaos@latest"
   "github.com/owasp-amass/amass/v4/...@master"
   "github.com/tomnomnom/assetfinder@latest"
-  "github.com/tomnomnom/gau@latest"
   "github.com/lc/gau@latest"
   "github.com/tomnomnom/waybackurls@latest"
   "github.com/lc/subjs@latest"
   "github.com/ffuf/ffuf@latest"
-  "github.com/epi052/feroxbuster@latest"
   "github.com/tomnomnom/httprobe@latest"
-  "github.com/Emoe/kiterunner/cmd/kr@latest"
+  "github.com/assetnote/kiterunner/cmd/kr@latest"
   "github.com/hakluke/hakrawler@latest"
   "github.com/fullstorydev/grpcurl/cmd/grpcurl@latest"
 )
@@ -53,10 +51,22 @@ for t in "${GO_TOOLS[@]}"; do
   go install "$t" || log "  ! failed: $t"
 done
 
+# feroxbuster is Rust, not Go -- not go-installable. Use apt/cargo/prebuilt release.
+command -v feroxbuster >/dev/null 2>&1 || {
+  log "feroxbuster not found; installing via apt (falls back to a note if unavailable)"
+  sudo apt-get install -y feroxbuster 2>/dev/null || log "  ! feroxbuster: install manually (cargo install feroxbuster, or https://github.com/epi052/feroxbuster/releases)"
+}
+
 # ---- pip python tools ----
 PY_TOOLS=(trufflehog gitleaks gitdumper github-subdomains dnsgen altdns gotator linkfinder SecretFinder jsluice jsretk arjun paramspider x8 cloud_enum S3Scanner bucketloot gcpbucketbrute dnsvalidator)
 log "pip install core python deps"
-python3 -m pip install --upgrade pip
+# Both guarded with || true: modern Debian/Kali enforce PEP 668
+# (externally-managed-environment) and refuse a bare global pip install, and
+# under set -e an unguarded failure here would abort the rest of the script
+# (pipx tools + wordlists below) -- penguin's own deps are installed
+# separately into .venv/ by penguin/venv.py, so this system-wide install is
+# best-effort only.
+python3 -m pip install --upgrade pip || true
 python3 -m pip install -r requirements.txt || true
 for m in trufflehog gitleaks; do
   command -v "$m" >/dev/null 2>&1 || { log "  installing $m via pipx"; pipx install "$m" 2>/dev/null || log "  ! $m not installed"; }
