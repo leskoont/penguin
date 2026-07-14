@@ -188,7 +188,8 @@ def cmd_install_check(
              "masscan", "nmap", "cloud_enum", "trufflehog", "gitleaks",
              "gitdumper", "github-subdomains", "kr", "grpcurl", "trivy", "dnsgen",
              "altdns", "gotator", "redis-cli", "aws", "dig", "dnsvalidator",
-             "hakrawler", "paramspider", "x8", "S3Scanner", "bucketloot", "jsluice"]
+             "hakrawler", "paramspider", "x8", "s3scanner", "bucketloot", "jsluice",
+             "SecretFinder", "gcpbucketbrute"]
     # Presence is a plain PATH lookup, not a "--help" probe: many of these
     # tools (dig, masscan, amass with its own postinstall quirks, ...) exit
     # nonzero or need root/subcommands for --help, and runner.run() collapses

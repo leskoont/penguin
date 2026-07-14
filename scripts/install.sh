@@ -43,6 +43,11 @@ GO_TOOLS=(
   "github.com/assetnote/kiterunner/cmd/kr@latest"
   "github.com/hakluke/hakrawler@latest"
   "github.com/fullstorydev/grpcurl/cmd/grpcurl@latest"
+  "github.com/gwen001/github-subdomains@latest"
+  "github.com/Josue87/gotator@latest"
+  "github.com/BishopFox/jsluice/cmd/jsluice@latest"
+  "github.com/redhuntlabs/bucketloot/cmd/bucketloot@latest"
+  "github.com/sa7mon/s3scanner@latest"
 )
 install_go
 export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
@@ -57,8 +62,17 @@ command -v feroxbuster >/dev/null 2>&1 || {
   sudo apt-get install -y feroxbuster 2>/dev/null || log "  ! feroxbuster: install manually (cargo install feroxbuster, or https://github.com/epi052/feroxbuster/releases)"
 }
 
-# ---- pip python tools ----
-PY_TOOLS=(trufflehog gitleaks gitdumper github-subdomains dnsgen altdns gotator linkfinder SecretFinder jsluice jsretk arjun paramspider x8 cloud_enum S3Scanner bucketloot gcpbucketbrute dnsvalidator)
+# x8 is Rust too.
+command -v x8 >/dev/null 2>&1 || {
+  if command -v cargo >/dev/null 2>&1; then
+    log "installing x8 via cargo"
+    cargo install x8 2>/dev/null || log "  ! x8: cargo install failed"
+  else
+    log "  ! x8: needs Rust/cargo (not installed) -- see https://github.com/Sh1Yo/x8#installation"
+  fi
+}
+
+# ---- pip/pipx python tools (real PyPI packages) ----
 log "pip install core python deps"
 # Both guarded with || true: modern Debian/Kali enforce PEP 668
 # (externally-managed-environment) and refuse a bare global pip install, and
@@ -68,9 +82,62 @@ log "pip install core python deps"
 # best-effort only.
 python3 -m pip install --upgrade pip || true
 python3 -m pip install -r requirements.txt || true
-for m in trufflehog gitleaks; do
+for m in trufflehog gitleaks dnsgen arjun; do
   command -v "$m" >/dev/null 2>&1 || { log "  installing $m via pipx"; pipx install "$m" 2>/dev/null || log "  ! $m not installed"; }
 done
+# py-altdns publishes under a different PyPI name than its binary
+command -v altdns >/dev/null 2>&1 || { log "  installing altdns via pipx (py-altdns)"; pipx install py-altdns 2>/dev/null || log "  ! altdns not installed"; }
+# no PyPI release, but both have proper setup.py packaging -> pipx can install straight from git
+command -v paramspider >/dev/null 2>&1 || { log "  installing paramspider via pipx (from git)"; pipx install "git+https://github.com/devanshbatham/paramspider" 2>/dev/null || log "  ! paramspider not installed"; }
+command -v dnsvalidator >/dev/null 2>&1 || { log "  installing dnsvalidator via pipx (from git)"; pipx install "git+https://github.com/vortexau/dnsvalidator" 2>/dev/null || log "  ! dnsvalidator not installed"; }
+
+# ---- script-only tools with no packaging at all: clone + dedicated venv/wrapper ----
+# These ship as a single script meant to be run with `python3 script.py`, with
+# no setup.py/entry_points -- pip/pipx can't produce a binary for them, so each
+# gets its own throwaway venv (sidesteps PEP 668 too) and a thin wrapper on PATH.
+TOOLS_DIR="$HOME/.penguin-tools"
+BIN_DIR="$HOME/.local/bin"
+mkdir -p "$TOOLS_DIR" "$BIN_DIR"
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *) export PATH="$BIN_DIR:$PATH"; echo "export PATH=\"$BIN_DIR:\$PATH\"" >> "$HOME/.bashrc" ;;
+esac
+
+install_py_script_tool() {
+  local bin_name="$1" repo_url="$2" entry_script="$3"
+  command -v "$bin_name" >/dev/null 2>&1 && return
+  local dest="$TOOLS_DIR/$(basename "$repo_url" .git)"
+  log "  installing $bin_name (clone + venv: $repo_url)"
+  [ -d "$dest" ] || git clone --depth 1 "$repo_url" "$dest" 2>/dev/null || { log "  ! $bin_name: clone failed"; return; }
+  python3 -m venv "$dest/.venv" 2>/dev/null || { log "  ! $bin_name: venv create failed"; return; }
+  [ -f "$dest/requirements.txt" ] && "$dest/.venv/bin/pip" install -q -r "$dest/requirements.txt" 2>/dev/null
+  printf '#!/usr/bin/env bash\nexec "%s" "%s" "$@"\n' "$dest/.venv/bin/python" "$dest/$entry_script" > "$BIN_DIR/$bin_name"
+  chmod +x "$BIN_DIR/$bin_name"
+}
+
+install_py_script_tool linkfinder     "https://github.com/GerbenJavado/LinkFinder"        "linkfinder.py"
+install_py_script_tool SecretFinder   "https://github.com/m4ll0k/SecretFinder"            "SecretFinder.py"
+install_py_script_tool cloud_enum     "https://github.com/initstring/cloud_enum"          "cloud_enum.py"
+install_py_script_tool gcpbucketbrute "https://github.com/RhinoSecurityLabs/GCPBucketBrute" "gcpbucketbrute.py"
+
+# gitdumper: bash script (GitTools), not Python -- same clone pattern, no venv needed
+command -v gitdumper >/dev/null 2>&1 || {
+  log "  installing gitdumper (git clone)"
+  dest="$TOOLS_DIR/GitTools"
+  [ -d "$dest" ] || git clone --depth 1 https://github.com/internetwache/GitTools "$dest" 2>/dev/null || log "  ! gitdumper: clone failed"
+  if [ -f "$dest/Dumper/gitdumper.sh" ]; then
+    chmod +x "$dest/Dumper/gitdumper.sh"
+    printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "$dest/Dumper/gitdumper.sh" > "$BIN_DIR/gitdumper"
+    chmod +x "$BIN_DIR/gitdumper"
+  else
+    log "  ! gitdumper.sh not found after clone"
+  fi
+}
+
+# jsretk (SeanPesce/JSRETK) is Node.js-based with no documented install/PATH
+# story (run directly as `node jsretk-strings.js`, not a packaged CLI) --
+# left as a manual step rather than guessing at a wrapper.
+command -v jsretk-strings >/dev/null 2>&1 || log "  note: jsretk not auto-installed (Node.js tool, no CLI package -- see https://github.com/SeanPesce/JSRETK)"
 
 # ---- system packages ----
 for b in masscan nmap redis-tools dnsutils awscli docker.io trivy; do
