@@ -10,7 +10,9 @@ from ._base import ToolContext
 
 
 def katana(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
-    cmd = ["katana", "-list", str(in_file), "-js", "-jc", "-d", "5", "-aff", "-silent", "-o", str(out)]
+    # -js is not a real katana flag (only -jc/-js-crawl exists); passing it
+    # trips cobra's unknown-flag parsing and katana exits 2 before doing anything.
+    cmd = ["katana", "-list", str(in_file), "-jc", "-d", "5", "-aff", "-silent", "-o", str(out)]
     r = ctx.execute("katana", cmd, timeout=900)
     return out if out.exists() else None
 
@@ -34,9 +36,13 @@ def waybackurls(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
 
 
 def subjs(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
-    cmd = ["subjs", "-i", str(in_file), "-o", str(out)]
+    # subjs has no -o flag -- it only writes to stdout.
+    cmd = ["subjs", "-i", str(in_file)]
     r = ctx.execute("subjs", cmd, timeout=600)
-    return out if out.exists() else None
+    if r.ok:
+        out.write_text(r.stdout, encoding="utf-8")
+        return out
+    return None
 
 
 def hakrawler(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
@@ -45,9 +51,10 @@ def hakrawler(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     hosts = in_file.read_text(encoding="utf-8").splitlines()
     if not hosts:
         return None
-    # hakrawler takes a single URL; run once over the first host
-    cmd = ["hakrawler", "-subs", "-plain", hosts[0]]
-    r = ctx.execute("hakrawler", cmd, timeout=600)
+    # hakrawler dropped -plain and takes URLs via stdin only, not a
+    # positional/CLI arg -- run once over the first host, fed via stdin.
+    cmd = ["hakrawler", "-subs"]
+    r = ctx.execute("hakrawler", cmd, timeout=600, input=hosts[0] + "\n")
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out
@@ -71,15 +78,29 @@ def feroxbuster(ctx: ToolContext, url: str, wordlist: Path, out: Path) -> Option
 
 
 def arjun(ctx: ToolContext, url: str, out: Path, method: str = "GET") -> Optional[Path]:
-    cmd = ["arjun", "-u", url, "-m", method, "--stable", "-o", str(out)]
-    r = ctx.execute("arjun", cmd, timeout=600)
+    # --stable forces threads=1 plus a random 6-12s delay between every
+    # request -- against a large param wordlist that alone burns the whole
+    # 600s timeout x3 retries. Drop it and use arjun's real threads/timeout
+    # flags (-t default 5, -T per-request timeout default 15s) instead.
+    cmd = ["arjun", "-u", url, "-m", method, "-t", "10", "-T", "10", "-o", str(out)]
+    r = ctx.execute("arjun", cmd, timeout=300)
     return out if out.exists() else None
 
 
 def paramspider(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
-    cmd = ["paramspider", "-d", domain, "-o", str(out)]
+    # paramspider has no -o/--output flag -- it always writes to a hardcoded
+    # ./results/<domain>.txt relative to the CWD it's invoked from. Run it,
+    # then relocate that file to the caller-requested `out` path.
+    import shutil
+
+    cmd = ["paramspider", "-d", domain]
     r = ctx.execute("paramspider", cmd, timeout=600)
-    return out if out.exists() else None
+    produced = Path("results") / f"{domain}.txt"
+    if produced.exists():
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(produced), str(out))
+        return out
+    return None
 
 
 def x8(ctx: ToolContext, url: str, wordlist: Path, out: Path) -> Optional[Path]:
