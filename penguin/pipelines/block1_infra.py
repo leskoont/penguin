@@ -105,7 +105,11 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
 
         words = cfg.path("wordlists/permutation-words.txt")
         if words.exists():
-            rs2.altdns(ctx, perms_in, words, sub_dir / "altdns_perms.txt", sub_dir / "altdns_resolved.txt")
+            # altdns was dropped here: it's broken upstream against modern
+            # tldextract ("cannot import name 'LOG' from tldextract.tldextract")
+            # so it fail-fasted on every single run, and it's fully redundant
+            # with gotator + dnsgen, which generate the same permutation space
+            # and actually work. Nothing of value is lost by removing it.
             rs2.gotator(ctx, perms_in, sub_dir / "gotator_perms.txt", words)
             rs2.puredns_resolve(ctx, sub_dir / "gotator_perms.txt", resolvers, sub_dir / "gotator_resolved.txt")
 
@@ -113,7 +117,7 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         # (guide's self-learning principle: every found artifact returns to
         # the pipeline instead of being a dead end)
         for extra in (sub_dir / "puredns_brute.txt", sub_dir / "perms_resolved.txt",
-                      sub_dir / "altdns_resolved.txt", sub_dir / "gotator_resolved.txt"):
+                      sub_dir / "gotator_resolved.txt"):
             if extra.exists():
                 raw_lines |= _extract_scoped(extra.read_text(encoding="utf-8", errors="ignore"), scope_rx)
 

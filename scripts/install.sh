@@ -137,29 +137,12 @@ python3 -m pip install -r requirements.txt >/dev/null 2>&1 || log "  (skipped: P
 for m in trufflehog dnsgen arjun; do
   command -v "$m" >/dev/null 2>&1 || { log "  installing $m via pipx"; pipx install "$m" 2>/dev/null || log "  ! $m not installed"; }
 done
-# py-altdns publishes under a different PyPI name than its binary. It also
-# hasn't been updated since ~2019 and imports the `imp` module, removed in
-# Python 3.12 -- if the system's default python3 is 3.12+, retry pinned to
-# whatever older interpreter happens to be on PATH before giving up.
-# NOTE: even when the install below succeeds, altdns can still fail *at
-# runtime* with "ImportError: cannot import name 'LOG' from
-# 'tldextract.tldextract'" -- altdns imports a private tldextract symbol
-# that newer tldextract releases (pulled in unpinned) no longer expose. This
-# is an unresolved upstream incompatibility (see
-# https://github.com/infosec-au/altdns/issues/15), not a penguin bug, and no
-# tldextract version is confirmed compatible -- left undiagnosed further
-# rather than guessing a pin that might not actually work.
-command -v altdns >/dev/null 2>&1 || {
-  log "  installing altdns via pipx (py-altdns)"
-  if ! pipx install py-altdns 2>/dev/null; then
-    altdns_ok=false
-    for py in python3.11 python3.10 python3.9; do
-      command -v "$py" >/dev/null 2>&1 || continue
-      pipx install --python "$py" py-altdns 2>/dev/null && { altdns_ok=true; break; }
-    done
-    $altdns_ok || log "  ! altdns: incompatible with Python 3.12+ (removed 'imp' module) and no older python3.x found on PATH -- see https://github.com/infosec-au/altdns/issues"
-  fi
-}
+# altdns is intentionally NOT installed: it's abandoned (~2019), imports the
+# `imp` module removed in Python 3.12, and even when installed fails at runtime
+# with "cannot import name 'LOG' from tldextract.tldextract" against any modern
+# tldextract (upstream https://github.com/infosec-au/altdns/issues/15). penguin
+# dropped it entirely -- gotator + dnsgen cover the same permutation space and
+# work. (Its words.txt is still fetched below as the permutation wordlist.)
 # no PyPI release, but both have proper setup.py packaging -> pipx can install straight from git
 command -v paramspider >/dev/null 2>&1 || { log "  installing paramspider via pipx (from git)"; pipx install "git+https://github.com/devanshbatham/paramspider" 2>/dev/null || log "  ! paramspider not installed"; }
 command -v dnsvalidator >/dev/null 2>&1 || { log "  installing dnsvalidator via pipx (from git)"; pipx install "git+https://github.com/vortexau/dnsvalidator" 2>/dev/null || log "  ! dnsvalidator not installed"; }

@@ -59,10 +59,9 @@ def dnsgen(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     return None
 
 
-def altdns(ctx: ToolContext, in_file: Path, words: Path, out: Path, resolved: Path) -> Optional[Path]:
-    cmd = ["altdns", "-i", str(in_file), "-o", str(out), "-w", str(words), "-r", "-s", str(resolved)]
-    r = ctx.execute("altdns", cmd, timeout=300)
-    return resolved if resolved.exists() else None
+# altdns removed: broken upstream against modern tldextract (import of the
+# deleted ``LOG`` symbol), so it fail-fasted every run, and gotator + dnsgen
+# already cover the same DNS-permutation space and actually work.
 
 
 def gotator(ctx: ToolContext, in_file: Path, out: Path, words: Path) -> Optional[Path]:

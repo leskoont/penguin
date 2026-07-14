@@ -187,7 +187,7 @@ def cmd_install_check(
              "feroxbuster", "katana", "gau", "waybackurls", "subjs", "arjun",
              "findomain", "masscan", "nmap", "cloud_enum", "trufflehog", "gitleaks",
              "gitdumper", "github-subdomains", "kr", "grpcurl", "trivy", "dnsgen",
-             "altdns", "gotator", "redis-cli", "aws", "dig", "dnsvalidator",
+             "gotator", "redis-cli", "aws", "dig", "dnsvalidator",
              "hakrawler", "paramspider", "x8", "s3scanner", "bucketloot", "jsluice",
              "SecretFinder", "gcpbucketbrute"]
     # Presence is a plain PATH lookup, not a "--help" probe: many of these

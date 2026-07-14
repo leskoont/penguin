@@ -46,7 +46,6 @@ tools:
   gitleaks: {proxy: false}
   github-subdomains: {proxy: false}
   dnsvalidator: {proxy: false}
-  altdns: {proxy: false}
   gotator: {proxy: false}
   hakrawler: {proxy: false}
   paramspider: {proxy: false}
