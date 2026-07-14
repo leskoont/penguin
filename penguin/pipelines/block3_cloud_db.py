@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import logging
 import re
+from functools import partial
 from pathlib import Path
 
 from ..config import Config
+from ..parallel import run_parallel
 from ..state import RunState
 from ..tools import ports as pt
 from ..tools import cloud as cl
@@ -74,10 +76,25 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
     bucket_out = state.path("cloud/buckets.txt")
     bucket_out.parent.mkdir(parents=True, exist_ok=True)
     candidates = [domain, domain.replace(".", "-"), domain.split(".")[0]]
-    for b in candidates:
-        cl.aws_s3_ls(ctx, b, bucket_out)
-        cl.azure_probe(ctx, b, bucket_out)
-        cl.gcs_probe(ctx, b, bucket_out)
+    # aws/azure/gcs probe cloud-provider endpoints (s3/blob/storage), not the
+    # target, so they overlap safely. Each only *appends* to its `out` on a hit,
+    # so concurrent writes to one shared file would interleave -- give every
+    # probe its own part file (keyed by candidate *index*, since slugs of
+    # "x.com" and "x-com" could collide), fan them out, then merge.
+    bucket_parts: list[Path] = []
+    bucket_tasks: list = []
+    for ci, b in enumerate(candidates):
+        for pname, pfn in (("aws", cl.aws_s3_ls), ("azure", cl.azure_probe), ("gcs", cl.gcs_probe)):
+            part = state.path(f"cloud/_bucket_{pname}_{ci}.txt")
+            bucket_parts.append(part)
+            bucket_tasks.append(partial(pfn, ctx, b, part))
+    run_parallel(bucket_tasks, max_workers=cfg.general.max_parallel_tools,
+                 label="block3 bucket probes")
+    merged = [p.read_text(encoding="utf-8") for p in bucket_parts if p.exists()]
+    if merged:
+        # only (re)create buckets.txt when something was actually found, matching
+        # the old append-on-hit semantics the downstream `.exists()` guard relies on
+        bucket_out.write_text("".join(merged), encoding="utf-8")
     cl.cloud_enum(ctx, domain.split(".")[0], state.path("cloud/cloud_enum.txt"))
 
     cand_file = state.path("cloud/bucket_candidates.txt")
