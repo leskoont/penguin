@@ -65,7 +65,19 @@ def gcs_probe(ctx: ToolContext, bucket: str, out: Path) -> bool:
     return False
 
 
-def bucketloot(ctx: ToolContext, bucket: str, out_dir: Path) -> Optional[Path]:
-    cmd = ["python3", "bucketloot.py", "-b", bucket, "-o", str(out_dir)]
+def bucketloot(ctx: ToolContext, bucket_url: str, out: Path) -> Optional[Path]:
+    # install.sh builds bucketloot via `go install .../cmd/bucketloot@latest`,
+    # so it lands on PATH as the `bucketloot` binary -- invoking it as
+    # "python3 bucketloot.py" only ever worked if the CWD happened to hold a
+    # checkout, and made the missing-binary skip check cmd[0]="python3"
+    # (always present), so the intended skip never fired.
+    #
+    # Verified against upstream source (redhuntlabs/BucketLoot): the target is
+    # a bare positional fully-qualified URL (no -b flag, no s3:// scheme), and
+    # output is written via -save to a file path ending in .txt/.json -- there
+    # is no output-directory flag, and BucketLoot's os.Create does not create
+    # the parent dir itself, so we must.
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["bucketloot", bucket_url, "-save", str(out)]
     r = ctx.execute("bucketloot", cmd, timeout=300)
-    return ok_path(r, out_dir)
+    return ok_path(r, out)

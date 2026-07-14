@@ -108,7 +108,27 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
         results["buckets"] += bucket_out.read_text(encoding="utf-8").splitlines()
         loot_dir = state.sub("cloud/loot")
         for line in bucket_out.read_text(encoding="utf-8").splitlines():
-            m = re.search(r"s3://(\S+)", line) or re.search(r"GCS:\s*(\S+)", line)
-            if m:
-                cl.bucketloot(ctx, m.group(1), loot_dir / m.group(1).replace("/", "_"))
+            # BucketLoot requires a fully-qualified https:// URL, not a bare
+            # bucket name/s3:// scheme -- reconstruct the provider-specific
+            # URL the same way aws_s3_ls/gcs_probe already build it above.
+            s3_m = re.search(r"s3://(\S+)", line)
+            gcs_m = re.search(r"GCS:\s*(\S+)", line)
+            if s3_m:
+                bucket = s3_m.group(1)
+                # path-style addressing avoids virtual-hosted-style breaking
+                # AWS's wildcard TLS cert when `bucket` is itself a dotted
+                # domain (e.g. "example.com.s3.amazonaws.com" fails hostname
+                # verification against the single-label wildcard cert).
+                bucket_url = f"https://s3.amazonaws.com/{bucket}"
+            elif gcs_m:
+                bucket = gcs_m.group(1)
+                bucket_url = f"https://storage.googleapis.com/{bucket}"
+            else:
+                continue
+            # tag the filename with the provider: candidates are probed
+            # against aws/azure/gcs in parallel, so an s3 hit and a gcs hit
+            # for the same bucket-name candidate would otherwise collide on
+            # the same loot_dir path and silently overwrite each other.
+            loot_out = loot_dir / f"{'s3' if s3_m else 'gcs'}_{bucket.replace('/', '_')}.json"
+            cl.bucketloot(ctx, bucket_url, loot_out)
     return results
