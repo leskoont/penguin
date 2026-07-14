@@ -206,12 +206,26 @@ done
 
 # ---- wordlists ----
 mkdir -p wordlists results/proxies reports
-[ -f wordlists/resolvers.txt ] || { log "fetching resolvers"; curl -sL https://raw.githubusercontent.com/tomnomnom/httprobe/master/resolvers.txt -o wordlists/resolvers.txt 2>/dev/null || log "  ! resolvers fetch failed"; }
-[ -f wordlists/subdomains-large.txt ] || { log "fetching subdomains-large (assetnote)"; curl -sL https://wordlists-cdn.assetnote.io/data/us_subdomains.txt -o wordlists/subdomains-large.txt 2>/dev/null || log "  ! subdomain list fetch failed"; }
-[ -f wordlists/directory-list-2.3-medium.txt ] || { log "fetching directory wordlist (SecLists)"; curl -sL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt -o wordlists/directory-list-2.3-medium.txt 2>/dev/null || log "  ! dir list fetch failed"; }
-[ -f wordlists/routes-large.kite ] || { log "fetching kiterunner routes-large.kite"; curl -sL https://wordlists-cdn.assetnote.io/data/kiterunner/routes-large.kite -o wordlists/routes-large.kite 2>/dev/null || log "  ! kite fetch failed"; }
-[ -f wordlists/permutation-words.txt ] || { log "fetching permutation words (OneListForAll)"; curl -sL https://raw.githubusercontent.com/six2dez/OneListForAll/main/permutations_list.txt -o wordlists/permutation-words.txt 2>/dev/null || log "  ! permutation words fetch failed"; }
-[ -f wordlists/params.txt ] || { log "fetching param names (SecLists)"; curl -sL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/burp-parameter-names.txt -o wordlists/params.txt 2>/dev/null || log "  ! param wordlist fetch failed"; }
+
+# plain `curl -sL -o file` exits 0 even on a 404/CDN error page, so a single
+# network hiccup silently writes garbage into `file`; the old `[ -f file ] ||`
+# guard then treated that garbage as "already fetched" forever, on every
+# future run. -f makes curl actually fail on HTTP errors, `-s "$path"` (non-
+# empty, not just exists) is the re-fetch guard, and a failed attempt is
+# removed instead of left behind half-written.
+fetch_wordlist() {
+  local path="$1" url="$2" label="$3"
+  [ -s "$path" ] && return 0
+  log "fetching $label"
+  curl -fsL "$url" -o "$path" 2>/dev/null || { rm -f "$path"; log "  ! $label fetch failed"; }
+}
+
+fetch_wordlist wordlists/resolvers.txt https://raw.githubusercontent.com/tomnomnom/httprobe/master/resolvers.txt "resolvers"
+fetch_wordlist wordlists/subdomains-large.txt https://wordlists-cdn.assetnote.io/data/us_subdomains.txt "subdomains-large (assetnote)"
+fetch_wordlist wordlists/directory-list-2.3-medium.txt https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt "directory wordlist (SecLists)"
+fetch_wordlist wordlists/routes-large.kite https://wordlists-cdn.assetnote.io/data/kiterunner/routes-large.kite "kiterunner routes-large.kite"
+fetch_wordlist wordlists/permutation-words.txt https://raw.githubusercontent.com/six2dez/OneListForAll/main/permutations_list.txt "permutation words (OneListForAll)"
+fetch_wordlist wordlists/params.txt https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/burp-parameter-names.txt "param names (SecLists)"
 [ -f wordlists/learned.txt ] || touch wordlists/learned.txt
 
 log "done. Run: python3 -m penguin install-check"
