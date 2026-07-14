@@ -37,6 +37,30 @@ def _which(binary: str) -> Optional[str]:
     return which(binary)
 
 
+# Substrings that mean "this exact command will never succeed, no matter how
+# many times we retry it" -- CLI-flag drift, missing Python deps, or a
+# protocol-level "no" (e.g. gRPC server refusing reflection). Retrying these
+# just burns wall-clock time waiting through the same backoff for a result
+# that was already final on attempt 1.
+_PERMANENT_ERR_SUBSTRINGS = (
+    "flag provided but not defined",
+    "unknown shorthand flag",
+    "unrecognized arguments",
+    "executable file not found in $PATH",
+    "modulenotfounderror",
+    "traceback (most recent call last)",
+    "does not support the reflection api",
+)
+
+
+def _is_permanent(binary: str, returncode: int, err: str) -> bool:
+    if binary == "curl" and returncode == 6:
+        # CURLE_COULDNT_RESOLVE_HOST -- DNS doesn't resolve, never will on retry.
+        return True
+    low = err.lower()
+    return any(s in low for s in _PERMANENT_ERR_SUBSTRINGS)
+
+
 def run(
     cmd: list,
     *,
@@ -48,11 +72,15 @@ def run(
     check_binary: bool = True,
     fatal: bool = False,
     log_stdout: bool = False,
+    input: Optional[str] = None,
 ) -> RunResult:
     """Run ``cmd`` (list of args) with retries / exponential backoff.
 
     Missing binaries are skipped non-fatally (so partially installed
     environments still run). Set ``fatal=True`` to raise on failure.
+    Commands whose failure is classified as permanent (bad flags, missing
+    modules, etc.) stop retrying immediately instead of repeating the same
+    guaranteed failure ``retries`` times.
     """
     binary = cmd[0]
     resolved = _which(binary)
@@ -76,6 +104,7 @@ def run(
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                input=input,
                 check=False,
             )
             if proc.returncode == 0:
@@ -84,6 +113,9 @@ def run(
                 return RunResult(cmd, proc.returncode, proc.stdout, proc.stderr, attempts, time.time() - start, True)
             last_err = proc.stderr.strip() or f"exit={proc.returncode}"
             logger.warning("[retry %d/%d] %s -> %s", attempts, retries, binary, last_err[:200])
+            if _is_permanent(binary, proc.returncode, last_err):
+                logger.warning("[fail-fast] %s -> permanent failure, not retrying", binary)
+                break
         except subprocess.TimeoutExpired as exc:
             last_err = f"timeout after {timeout}s"
             logger.warning("[retry %d/%d] %s -> %s", attempts, retries, binary, last_err)
