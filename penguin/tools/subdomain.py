@@ -15,7 +15,9 @@ def subfinder(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
 
 
 def amass_passive(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
-    cmd = ["amass", "enum", "-passive", "-d", domain, "-src", "-o", str(out)]
+    # -src was removed from amass v4's `enum` flag set; passing it now fails
+    # with "flag provided but not defined: -src" and aborts the whole run.
+    cmd = ["amass", "enum", "-passive", "-d", domain, "-o", str(out)]
     r = ctx.execute("amass", cmd, timeout=600)
     return out if r.ok else None
 

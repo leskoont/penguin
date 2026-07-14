@@ -36,12 +36,14 @@ class ToolContext:
         """Return the correct proxy flag for a given tool."""
         if not proxy:
             return []
+        # amass v4 and puredns dropped proxy support from their CLI entirely --
+        # passing -proxy makes them fail with "flag provided but not defined"
+        # (amass) / print the usage screen and exit nonzero (puredns), so
+        # neither is listed here even though they're in config.tools.
         mapping = {
             "httpx": ["-proxy", proxy],
             "nuclei": ["-proxy", proxy],
-            "puredns": ["-proxy", proxy],
             "subfinder": ["-proxy", proxy],
-            "amass": ["-proxy", proxy],
             "dnsx": ["-proxy", proxy],
             "katana": ["-proxy", proxy],
             "gau": ["-proxy", proxy],

@@ -101,6 +101,24 @@ command -v kr >/dev/null 2>&1 || {
   esac
 }
 
+# findomain is Rust, not Go -- ships no go-installable target either.
+# Grab the prebuilt release zip directly (both amd64 and arm64 are published).
+command -v findomain >/dev/null 2>&1 || {
+  FD_ARCH=$(uname -m); FD_ASSET=""
+  case "$FD_ARCH" in x86_64) FD_ASSET=findomain-linux.zip;; aarch64) FD_ASSET=findomain-aarch64.zip;; esac
+  if [ -n "$FD_ASSET" ]; then
+    log "installing findomain (prebuilt release, $FD_ASSET)"
+    mkdir -p "$HOME/go/bin"
+    curl -sL "https://github.com/Findomain/Findomain/releases/latest/download/$FD_ASSET" -o /tmp/findomain.zip \
+      && unzip -oq /tmp/findomain.zip -d /tmp \
+      && install -m 0755 /tmp/findomain "$HOME/go/bin/findomain" \
+      || log "  ! findomain: download/extract failed"
+    rm -f /tmp/findomain.zip /tmp/findomain
+  else
+    log "  ! findomain: unsupported arch $(uname -m), skipping"
+  fi
+}
+
 # ---- pip/pipx python tools (real PyPI packages) ----
 log "pip install core python deps"
 # Both guarded with || true: modern Debian/Kali enforce PEP 668
@@ -114,8 +132,21 @@ python3 -m pip install -r requirements.txt >/dev/null 2>&1 || log "  (skipped: P
 for m in trufflehog dnsgen arjun; do
   command -v "$m" >/dev/null 2>&1 || { log "  installing $m via pipx"; pipx install "$m" 2>/dev/null || log "  ! $m not installed"; }
 done
-# py-altdns publishes under a different PyPI name than its binary
-command -v altdns >/dev/null 2>&1 || { log "  installing altdns via pipx (py-altdns)"; pipx install py-altdns 2>/dev/null || log "  ! altdns not installed"; }
+# py-altdns publishes under a different PyPI name than its binary. It also
+# hasn't been updated since ~2019 and imports the `imp` module, removed in
+# Python 3.12 -- if the system's default python3 is 3.12+, retry pinned to
+# whatever older interpreter happens to be on PATH before giving up.
+command -v altdns >/dev/null 2>&1 || {
+  log "  installing altdns via pipx (py-altdns)"
+  if ! pipx install py-altdns 2>/dev/null; then
+    altdns_ok=false
+    for py in python3.11 python3.10 python3.9; do
+      command -v "$py" >/dev/null 2>&1 || continue
+      pipx install --python "$py" py-altdns 2>/dev/null && { altdns_ok=true; break; }
+    done
+    $altdns_ok || log "  ! altdns: incompatible with Python 3.12+ (removed 'imp' module) and no older python3.x found on PATH -- see https://github.com/infosec-au/altdns/issues"
+  fi
+}
 # no PyPI release, but both have proper setup.py packaging -> pipx can install straight from git
 command -v paramspider >/dev/null 2>&1 || { log "  installing paramspider via pipx (from git)"; pipx install "git+https://github.com/devanshbatham/paramspider" 2>/dev/null || log "  ! paramspider not installed"; }
 command -v dnsvalidator >/dev/null 2>&1 || { log "  installing dnsvalidator via pipx (from git)"; pipx install "git+https://github.com/vortexau/dnsvalidator" 2>/dev/null || log "  ! dnsvalidator not installed"; }
