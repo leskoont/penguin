@@ -161,11 +161,11 @@ def cmd_self_test(
     diff = st2.write_diff_files("all_subdomains.txt")
     assert "c.target.com" in diff["new"], "diff engine broken"
     LOG.info("[selftest] diff engine OK: new=%s", diff["new"])
-    from .runner import run
+    import shutil
 
     for b in ["subfinder", "httpx", "nuclei", "puredns", "dnsx", "ffuf", "amass"]:
-        r = run([b, "--help"], retries=1, timeout=10)
-        LOG.info("[selftest] %-12s %s", b, "present" if r.returncode != -1 else "MISSING (will skip)")
+        present = shutil.which(b) is not None
+        LOG.info("[selftest] %-12s %s", b, "present" if present else "MISSING (will skip)")
     LOG.info("[selftest] complete")
     return 0 if ok else 1
 
@@ -181,7 +181,7 @@ def cmd_install_check(
 ) -> int:
     cfg_path, _ = _merge(ctx, verbose, config, targets)
     cfg = load(cfg_path)
-    from .runner import run
+    import shutil
 
     tools = ["subfinder", "httpx", "nuclei", "amass", "puredns", "dnsx", "ffuf",
              "feroxbuster", "katana", "gau", "waybackurls", "subjs", "arjun",
@@ -189,10 +189,12 @@ def cmd_install_check(
              "gitdumper", "github-subdomains", "kr", "grpcurl", "trivy", "dnsgen",
              "altdns", "gotator", "redis-cli", "aws", "dig", "dnsvalidator",
              "hakrawler", "paramspider", "x8", "S3Scanner", "bucketloot", "jsluice"]
-    results: list[tuple[str, bool]] = []
-    for b in tools:
-        r = run([b, "--help"], retries=1, timeout=10)
-        results.append((b, r.returncode != -1))
+    # Presence is a plain PATH lookup, not a "--help" probe: many of these
+    # tools (dig, masscan, amass with its own postinstall quirks, ...) exit
+    # nonzero or need root/subcommands for --help, and runner.run() collapses
+    # "not found" and "found but every retry failed" into the same
+    # returncode=-1 -- so a --help probe reported installed tools as MISSING.
+    results: list[tuple[str, bool]] = [(b, shutil.which(b) is not None) for b in tools]
     console.print(install_check_table(results))
     missing = [name for name, present in results if not present]
     LOG.info("[install-check] %d/%d present, %d missing", len(tools) - len(missing), len(tools), len(missing))
