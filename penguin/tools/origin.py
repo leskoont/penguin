@@ -16,7 +16,7 @@ def dig_resolve(ctx: ToolContext, host: str, resolver: str, out: Path) -> Option
     cmd = ["dig", host, "@" + resolver, "+short"]
     r = ctx.execute("dig", cmd, timeout=30)
     if r.ok:
-        with open(out, "a", encoding="utf-8") as fh:
+        with open(out, "w", encoding="utf-8") as fh:
             fh.write(f"{host}@{resolver}: {r.stdout.strip()}\n")
         return r.stdout.strip()
     return None

@@ -83,14 +83,19 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     param_urls: set[str] = set()
     for f in js_dir.glob("paramspider_*.txt"):
         param_urls |= {l.strip() for l in f.read_text(encoding="utf-8").splitlines() if l.strip()}
+    endpoint_chunks: list[str] = []
     if param_urls:
-        with open(endpoints_file, "a", encoding="utf-8") as fh:
-            fh.write("\n".join(sorted(param_urls)) + "\n")
+        endpoint_chunks.append("\n".join(sorted(param_urls)) + "\n")
+    secret_chunks: list[str] = []
 
     js_dl_dir = state.sub("js/downloaded")
     for i, js in enumerate(js_alive.read_text(encoding="utf-8").splitlines() if js_alive.exists() else []):
-        sc.linkfinder(ctx, Path(js), endpoints_file)
-        sc.secretfinder(ctx, Path(js), secrets_file)
+        lf = sc.linkfinder(ctx, Path(js))
+        if lf:
+            endpoint_chunks.append(lf)
+        sf = sc.secretfinder(ctx, Path(js))
+        if sf:
+            secret_chunks.append(sf)
         local_js = js_dl_dir / f"{i}.js"
         # retries=1: this runs in a loop over every discovered JS URL (can be
         # 50-100+), each re-picking a proxy on retry -- at the default 3
@@ -100,6 +105,10 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         # SSL-handshake failures). One shot per file, same pattern as the
         # cloud.py/api.py/gitcicd.py per-candidate curl loops.
         ctx.execute("curl", ["curl", "-s", "-o", str(local_js), js], timeout=30, retries=1)
+    if endpoint_chunks:
+        endpoints_file.write_text("".join(endpoint_chunks), encoding="utf-8")
+    if secret_chunks:
+        secrets_file.write_text("".join(secret_chunks), encoding="utf-8")
     js_files = list(js_dl_dir.glob("*.js"))
     if js_files:
         sc.jsluice(ctx, " ".join(str(f) for f in js_files), state.path("content/jsluice.txt"))

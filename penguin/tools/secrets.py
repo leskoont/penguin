@@ -7,29 +7,24 @@ from typing import Optional
 from ._base import ToolContext, ok_path
 
 
-def linkfinder(ctx: ToolContext, js_file: Path, out: Path) -> Optional[Path]:
+def linkfinder(ctx: ToolContext, js_file: Path) -> Optional[str]:
     # install.sh installs linkfinder as a standalone wrapper binary on PATH
     # (a shim that execs its own venv python against the script's absolute
     # path) -- invoking "python3 linkfinder.py" as a relative filename only
     # ever worked if the CWD happened to contain a checkout of the repo,
     # which it doesn't, hence "No such file or directory" every run.
+    # Returns found text instead of writing it: this is called in a loop over
+    # every discovered JS file, fanning into one shared endpoints file -- the
+    # caller owns that accumulation (and the single write), not this wrapper.
     cmd = ["linkfinder", "-i", str(js_file), "-o", "cli"]
     r = ctx.execute("linkfinder", cmd, timeout=120)
-    if r.ok:
-        with open(out, "a", encoding="utf-8") as fh:
-            fh.write(r.stdout)
-        return out
-    return None
+    return r.stdout if r.ok and r.stdout else None
 
 
-def secretfinder(ctx: ToolContext, js_file: Path, out: Path) -> Optional[Path]:
+def secretfinder(ctx: ToolContext, js_file: Path) -> Optional[str]:
     cmd = ["SecretFinder", "-i", str(js_file), "-o", "cli"]
     r = ctx.execute("secretfinder", cmd, timeout=120)
-    if r.ok:
-        with open(out, "a", encoding="utf-8") as fh:
-            fh.write(r.stdout)
-        return out
-    return None
+    return r.stdout if r.ok and r.stdout else None
 
 
 def jsluice(ctx: ToolContext, js_glob: str, out: Path) -> Optional[Path]:

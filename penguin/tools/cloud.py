@@ -11,7 +11,7 @@ def aws_s3_ls(ctx: ToolContext, bucket: str, out: Path) -> bool:
     cmd = ["aws", "s3", "ls", f"s3://{bucket}/", "--no-sign-request"]
     r = ctx.execute("aws", cmd, timeout=60)
     if r.ok and "An error" not in r.stderr:
-        with open(out, "a", encoding="utf-8") as fh:
+        with open(out, "w", encoding="utf-8") as fh:
             fh.write(f"[FOUND] s3://{bucket}\n")
         return True
     return False
@@ -48,7 +48,7 @@ def azure_probe(ctx: ToolContext, account: str, out: Path) -> bool:
     cmd = ["curl", "-sk", url]
     r = ctx.execute("curl", cmd, timeout=60, retries=1)
     if r.ok and "<Name>" in r.stdout:
-        with open(out, "a", encoding="utf-8") as fh:
+        with open(out, "w", encoding="utf-8") as fh:
             fh.write(f"[FOUND] Azure: {account}\n")
         return True
     return False
@@ -59,7 +59,7 @@ def gcs_probe(ctx: ToolContext, bucket: str, out: Path) -> bool:
     cmd = ["curl", "-sk", "-o", "/dev/null", "-w", "%{http_code}", url]
     r = ctx.execute("curl", cmd, timeout=60, retries=1)
     if r.ok and "200" in r.stdout:
-        with open(out, "a", encoding="utf-8") as fh:
+        with open(out, "w", encoding="utf-8") as fh:
             fh.write(f"[FOUND] GCS: {bucket}\n")
         return True
     return False
