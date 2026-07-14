@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import logging
 import re
+from functools import partial
 from pathlib import Path
 
 from ..config import Config
+from ..parallel import run_parallel
 from ..state import RunState
 from ..tools import origin as og
 from ..tools import gitcicd as gc
@@ -26,14 +28,22 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
     domain = re.sub(r"^https?://", "", target["value"]).split("/")[0]
 
     # ---- origin IP discovery ----
+    # Seven independent OSINT lookups, each hitting a *different* external
+    # service (Cloudflare DNS, viewdns, SecurityTrails, Censys, ...) and
+    # writing its own distinct file -- no shared state, no target hammering --
+    # so fan them out instead of summing their latencies serially.
     origin_dir = state.sub("origin")
-    og.dig_resolve(ctx, f"www.{domain}", "1.1.1.1", origin_dir / "dig_www.txt")
-    og.dig_resolve(ctx, domain, "1.1.1.1", origin_dir / "dig_apex.txt")
-    og.cloudflare_trace(ctx, f"https://www.{domain}", origin_dir / "cf_trace.txt")
-    og.viewdns_history(ctx, domain, origin_dir / "viewdns.txt")
-    og.historical_dns_securitytrails(ctx, domain, origin_dir / "securitytrails.json")
-    og.censys_certs(ctx, domain, origin_dir / "censys_certs.json")
-    og.cloudflair(ctx, domain, origin_dir / "cloudflair.txt")
+    origin_tasks = [
+        partial(og.dig_resolve, ctx, f"www.{domain}", "1.1.1.1", origin_dir / "dig_www.txt"),
+        partial(og.dig_resolve, ctx, domain, "1.1.1.1", origin_dir / "dig_apex.txt"),
+        partial(og.cloudflare_trace, ctx, f"https://www.{domain}", origin_dir / "cf_trace.txt"),
+        partial(og.viewdns_history, ctx, domain, origin_dir / "viewdns.txt"),
+        partial(og.historical_dns_securitytrails, ctx, domain, origin_dir / "securitytrails.json"),
+        partial(og.censys_certs, ctx, domain, origin_dir / "censys_certs.json"),
+        partial(og.cloudflair, ctx, domain, origin_dir / "cloudflair.txt"),
+    ]
+    run_parallel(origin_tasks, max_workers=cfg.general.max_parallel_tools,
+                 label="block4 origin discovery")
 
     # ---- verify origin IP candidates found above (bypasses CDN if real) ----
     ip_re = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
@@ -42,10 +52,20 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
         candidate_ips |= set(ip_re.findall(f.read_text(encoding="utf-8")))
     for f in origin_dir.glob("*.json"):
         candidate_ips |= set(ip_re.findall(f.read_text(encoding="utf-8")))
+    # Each candidate is a *distinct* IP probed into its own verify_*.txt, so the
+    # probes overlap safely; the returncode check is read back sequentially
+    # afterwards to preserve the original sorted-order result list.
+    ordered_ips = sorted(candidate_ips)
+    verify_tasks = [
+        partial(og.verify_origin, ctx, domain, ip,
+                origin_dir / f"verify_{ip.replace('.', '_')}.txt")
+        for ip in ordered_ips
+    ]
+    run_parallel(verify_tasks, max_workers=cfg.general.max_parallel_tools,
+                 label="block4 origin verify")
     verified_ips = []
-    for ip in sorted(candidate_ips):
+    for ip in ordered_ips:
         vout = origin_dir / f"verify_{ip.replace('.', '_')}.txt"
-        og.verify_origin(ctx, domain, ip, vout)
         if vout.exists() and "returncode=0" in vout.read_text(encoding="utf-8"):
             verified_ips.append(ip)
     results["origin_ips"] = verified_ips
