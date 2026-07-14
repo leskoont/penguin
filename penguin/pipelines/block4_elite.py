@@ -88,8 +88,6 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
                 gc.trivy_image(ctx, f"{registry}/{repo}:latest",
                                registry_dir / f"trivy_{repo.replace('/', '_')}.json")
 
-    nu.nuclei_update(ctx)  # ensure templates present (best-effort)
-
     # ---- custom nuclei templates on live hosts ----
     live_hosts = state.path("live_hosts.txt")
     if live_hosts.exists():
