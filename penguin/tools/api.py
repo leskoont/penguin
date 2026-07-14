@@ -37,9 +37,14 @@ def graphql_introspection(ctx: ToolContext, endpoint: str, out: Path) -> Optiona
 
 
 def kiterunner(ctx: ToolContext, in_file: Path, kite: Path, out: Path) -> Optional[Path]:
-    cmd = ["kr", "scan", "-w", str(kite), "-list", str(in_file), "-o", str(out)]
+    # kr scan takes its input as a positional arg (file/URL/"-"), not -list,
+    # and has no -o/output flag at all -- it only writes results to stdout.
+    cmd = ["kr", "scan", str(in_file), "-w", str(kite)]
     r = ctx.execute("kr", cmd, timeout=1800)
-    return out if out.exists() else None
+    if r.ok:
+        out.write_text(r.stdout, encoding="utf-8")
+        return out
+    return None
 
 
 def grpcurl_list(ctx: ToolContext, target: str, out: Path) -> Optional[Path]:
