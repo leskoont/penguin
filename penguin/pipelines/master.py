@@ -21,6 +21,18 @@ logger = logging.getLogger("penguin.master")
 
 ProgressCb = Callable[[int, str, str], None]
 
+# Empty-result shapes matching each run_blockN's own fallback (see the
+# `results: dict = {...}` at the top of each run_blockN / its disabled-stage
+# return) so a block that raises degrades to exactly what "stage disabled"
+# already produces -- downstream `b#["key"]` / `b#.get("key")` lookups never
+# KeyError on a failed block.
+_BLOCK_FALLBACKS: dict[int, dict] = {
+    1: {"subdomains": [], "resolved": [], "live": []},
+    2: {"endpoints": [], "js_secrets": [], "api": []},
+    3: {"open_db": [], "buckets": []},
+    4: {"origin_ips": [], "exposed_git": [], "secrets": []},
+}
+
 
 def _emit(cb: Optional[ProgressCb], block_num: int, name: str, phase: str) -> None:
     if cb is None:
@@ -31,51 +43,82 @@ def _emit(cb: Optional[ProgressCb], block_num: int, name: str, phase: str) -> No
         logger.debug("progress_cb raised", exc_info=True)
 
 
+def _run_block(cfg: Config, state: RunState, target: dict, progress_cb: Optional[ProgressCb],
+               block_num: int, name: str, run_fn) -> dict:
+    """Run one recon block in isolation.
+
+    `run_parallel` already isolates individual *task* failures inside a
+    block, but nothing previously protected the substantial top-level block
+    code itself (merges, `read_text`, regex passes) -- an unhandled
+    exception there used to abort the whole target, skipping every
+    remaining block plus diff/notify/archive/report. Catch it here, log it,
+    and degrade to that block's own empty-result shape so the rest of
+    `run_target` (and the caller) sees a valid, if partial, result.
+    """
+    _emit(progress_cb, block_num, name, "start")
+    try:
+        result = run_fn(cfg, state, target)
+    except Exception:
+        logger.exception("[block%d:%s] %s unhandled exception -- degrading to empty result",
+                          block_num, name, target["value"])
+        result = {k: list(v) for k, v in _BLOCK_FALLBACKS[block_num].items()}
+    _emit(progress_cb, block_num, name, "done")
+    return result
+
+
 def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = None) -> dict:
     state = RunState(cfg, target["value"])
     logger.info("=== penguin run %s -> %s ===", target["value"], state.run_dir)
 
-    _emit(progress_cb, 1, "infra", "start")
-    b1 = run_block1(cfg, state, target)
-    _emit(progress_cb, 1, "infra", "done")
+    b1 = _run_block(cfg, state, target, progress_cb, 1, "infra", run_block1)
+    b2 = _run_block(cfg, state, target, progress_cb, 2, "web", run_block2)
+    b3 = _run_block(cfg, state, target, progress_cb, 3, "cloud_db", run_block3)
+    b4 = _run_block(cfg, state, target, progress_cb, 4, "elite", run_block4)
 
-    _emit(progress_cb, 2, "web", "start")
-    b2 = run_block2(cfg, state, target)
-    _emit(progress_cb, 2, "web", "done")
-
-    _emit(progress_cb, 3, "cloud_db", "start")
-    b3 = run_block3(cfg, state, target)
-    _emit(progress_cb, 3, "cloud_db", "done")
-
-    _emit(progress_cb, 4, "elite", "start")
-    b4 = run_block4(cfg, state, target)
-    _emit(progress_cb, 4, "elite", "done")
-
-    # accumulate into per-target history files (anew dedup)
-    state.add_lines("all_subdomains.txt", b1["subdomains"])
-    state.add_lines("all_urls.txt", b2.get("endpoints", []))
-    # live/httpx.csv rows are "url,input,title,..." (httpx -csv output), not
-    # bare URLs -- appending them raw would pollute live_hosts.txt (which
-    # block2/block4 treat as a clean URL-per-line list) with CSV headers and
-    # multi-field rows. Extract just the URL column, same as block2_web.py.
-    live_urls = []
-    for row in state.read_lines("live/httpx.csv"):
-        m = re.match(r'"??(https?://[^",]+)', row)
-        if m:
-            live_urls.append(m.group(1).strip('"'))
-    state.add_lines("live_hosts.txt", live_urls)
+    # accumulate into per-target history files (anew dedup). Wrapped so a
+    # failure here (e.g. a corrupt live/httpx.csv) can't skip diff/notify/
+    # archive/report for a target whose blocks otherwise succeeded.
+    try:
+        state.add_lines("all_subdomains.txt", b1["subdomains"])
+        state.add_lines("all_urls.txt", b2.get("endpoints", []))
+        # live/httpx.csv rows are "url,input,title,..." (httpx -csv output), not
+        # bare URLs -- appending them raw would pollute live_hosts.txt (which
+        # block2/block4 treat as a clean URL-per-line list) with CSV headers and
+        # multi-field rows. Extract just the URL column, same as block2_web.py.
+        live_urls = []
+        for row in state.read_lines("live/httpx.csv"):
+            m = re.match(r'"??(https?://[^",]+)', row)
+            if m:
+                live_urls.append(m.group(1).strip('"'))
+        state.add_lines("live_hosts.txt", live_urls)
+    except Exception:
+        logger.exception("[%s] failed to accumulate run history", target["value"])
 
     # self-learning wordlist
-    wm = WordlistManager(cfg)
-    wm.learn_from_endpoints(b2.get("endpoints", []) + b1["subdomains"])
+    try:
+        wm = WordlistManager(cfg)
+        wm.learn_from_endpoints(b2.get("endpoints", []) + b1["subdomains"])
+    except Exception:
+        logger.exception("[%s] wordlist learning failed", target["value"])
 
     # diff against previous run
-    diff = state.write_diff_files("all_subdomains.txt")
+    try:
+        diff = state.write_diff_files("all_subdomains.txt")
+    except Exception:
+        logger.exception("[%s] diff engine failed", target["value"])
+        diff = {"new": [], "removed": []}
     if diff["new"]:
-        notify(cfg, f"[{target['value']}] {len(diff['new'])} new subdomains", event="new_subdomains")
+        try:
+            notify(cfg, f"[{target['value']}] {len(diff['new'])} new subdomains", event="new_subdomains")
+        except Exception:
+            logger.exception("[%s] notify failed", target["value"])
         logger.info("[diff] %d new subdomains", len(diff["new"]))
 
-    state.archive()
+    try:
+        state.archive()
+    except Exception:
+        logger.exception("[%s] archive failed", target["value"])
+
     summary = {
         "target": target["value"],
         "run_dir": str(state.run_dir),

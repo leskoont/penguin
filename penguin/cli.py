@@ -90,12 +90,17 @@ def cmd_run(
     if not resolved:
         LOG.error("no targets; pass --target or populate config/targets.txt")
         return 1
+    had_failure = False
     for t in resolved:
-        with RichBlockProgress(console) as bp:
-            summary = run_target(cfg, t, progress_cb=bp.callback)
-        console.print(summary_table(t["value"], summary))
-        build_report(cfg, t, summary)
-    return 0
+        try:
+            with RichBlockProgress(console) as bp:
+                summary = run_target(cfg, t, progress_cb=bp.callback)
+            console.print(summary_table(t["value"], summary))
+            build_report(cfg, t, summary)
+        except Exception as exc:  # noqa - one target's failure must not abort the batch
+            LOG.exception("target %s failed: %s", t["value"], exc)
+            had_failure = True
+    return 1 if had_failure else 0
 
 
 @app.command("continuous", help="continuous recon loop")
