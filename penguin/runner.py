@@ -61,6 +61,10 @@ _PERMANENT_ERR_SUBSTRINGS = (
     "modulenotfounderror",
     "traceback (most recent call last)",
     "does not support the reflection api",
+    # a missing input file/wordlist never materializes on retry -- e.g.
+    # puredns "open .../subdomains-large.txt: no such file or directory",
+    # retried 3x through the full backoff for a result final on attempt 1.
+    "no such file or directory",
 )
 
 
