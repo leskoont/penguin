@@ -25,11 +25,11 @@ class ToolContext:
     def __init__(self, cfg: Config):
         self.cfg = cfg
 
-    def _proxy_applies(self, tool: str) -> bool:
+    def proxy_applies(self, tool: str) -> bool:
         return self.cfg.proxies.enabled and bool(self.cfg.tool_setting(tool, "proxy", True))
 
     def proxy_for(self, tool: str) -> Optional[str]:
-        if not self._proxy_applies(tool):
+        if not self.proxy_applies(tool):
             return None
         pool = get_pool(self.cfg)
         return pool.pick()
@@ -61,7 +61,7 @@ class ToolContext:
         n = max(1, retries if retries is not None else self.cfg.general.retry_attempts)
         backoff = self.cfg.general.retry_backoff
 
-        if not self._proxy_applies(tool):
+        if not self.proxy_applies(tool):
             return run(cmd, retries=n, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env, input=input)
 
         # Proxy-routed tools: a dead/broken proxy (e.g. curl exit=97
