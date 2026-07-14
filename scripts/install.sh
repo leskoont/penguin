@@ -47,7 +47,12 @@ GO_TOOLS=(
   "github.com/BishopFox/jsluice/cmd/jsluice@latest"
   "github.com/redhuntlabs/bucketloot/cmd/bucketloot@latest"
   "github.com/sa7mon/s3scanner@latest"
-  "github.com/gitleaks/gitleaks/v8@latest"
+  # gitleaks' repo moved to github.com/gitleaks/gitleaks, but its go.mod still
+  # DECLARES the old module path (github.com/zricethezav/gitleaks/v8); go
+  # install requires the requested path to match the declared one, so the new
+  # repo path fails with "module declares its path as ...". Use the declared
+  # path -- GitHub redirects it to the current repo.
+  "github.com/zricethezav/gitleaks/v8@latest"
 )
 install_go
 export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
