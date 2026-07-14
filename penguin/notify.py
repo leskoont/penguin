@@ -32,8 +32,11 @@ def notify(cfg: Config, message: str, *, level: str = "info", event: str = "") -
 
     provider = cfg.notify.provider.lower()
     try:
-        if provider in ("slack", "discord"):
+        if provider == "slack":
             payload = {"text": f"[{level.upper()}] {message}"}
+            resp = requests.post(webhook, json=payload, timeout=10)
+        elif provider == "discord":
+            payload = {"content": f"[{level.upper()}] {message}"}
             resp = requests.post(webhook, json=payload, timeout=10)
         elif provider == "telegram":
             # webhook env expected as https://api.telegram.org/bot<token>/sendMessage?chat_id=<id>
