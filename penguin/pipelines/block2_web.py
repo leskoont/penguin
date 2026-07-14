@@ -62,13 +62,13 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     ct.katana(ctx, hosts_file, js_dir / "katana.txt")
     ct.hakrawler(ctx, hosts_file, js_dir / "hakrawler.txt")
     for f in js_dir.glob("*.txt"):
-        for l in f.read_text(encoding="utf-8").splitlines():
+        for l in f.read_text(encoding="utf-8", errors="ignore").splitlines():
             if JS_RE.match(l.strip()):
                 lines.add(l.strip())
     # subjs
     ct.subjs(ctx, hosts_file, js_dir / "subjs.txt")
     if (js_dir / "subjs.txt").exists():
-        lines |= {l.strip() for l in (js_dir / "subjs.txt").read_text(encoding="utf-8").splitlines() if l.strip()}
+        lines |= {l.strip() for l in (js_dir / "subjs.txt").read_text(encoding="utf-8", errors="ignore").splitlines() if l.strip()}
     js_all.write_text("\n".join(sorted(lines)) + "\n", encoding="utf-8")
 
     js_alive = state.path("js_alive.txt")
@@ -82,14 +82,14 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     # paramspider mines parametrized URLs (not just .js) -- fold those into endpoints too
     param_urls: set[str] = set()
     for f in js_dir.glob("paramspider_*.txt"):
-        param_urls |= {l.strip() for l in f.read_text(encoding="utf-8").splitlines() if l.strip()}
+        param_urls |= {l.strip() for l in f.read_text(encoding="utf-8", errors="ignore").splitlines() if l.strip()}
     endpoint_chunks: list[str] = []
     if param_urls:
         endpoint_chunks.append("\n".join(sorted(param_urls)) + "\n")
     secret_chunks: list[str] = []
 
     js_dl_dir = state.sub("js/downloaded")
-    for i, js in enumerate(js_alive.read_text(encoding="utf-8").splitlines() if js_alive.exists() else []):
+    for i, js in enumerate(js_alive.read_text(encoding="utf-8", errors="ignore").splitlines() if js_alive.exists() else []):
         lf = sc.linkfinder(ctx, Path(js))
         if lf:
             endpoint_chunks.append(lf)
