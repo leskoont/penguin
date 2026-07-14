@@ -243,6 +243,16 @@ mkdir -p wordlists results/proxies reports
 # removed instead of left behind half-written.
 fetch_wordlist() {
   local path="$1" url="$2" label="$3"
+  # Machines that ran an older version of this script (curl -sL, no -f) may
+  # already have an HTML error/CDN-block page sitting in $path from before
+  # that fix landed -- non-empty, so the -s guard below would trust it
+  # forever. That's exactly what "failed to decode kite file: failed to
+  # unmarshal data: proto: ..." from kiterunner turned out to be: an HTML
+  # body fed to a binary protobuf parser. Sniff for it and force a refetch.
+  if [ -s "$path" ] && head -c 512 "$path" 2>/dev/null | grep -qi '<html\|<!doctype'; then
+    log "  ! $label: existing file looks like an HTML error page, refetching"
+    rm -f "$path"
+  fi
   [ -s "$path" ] && return 0
   log "fetching $label"
   curl -fsL "$url" -o "$path" 2>/dev/null || { rm -f "$path"; log "  ! $label fetch failed"; }
