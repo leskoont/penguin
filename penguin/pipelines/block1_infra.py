@@ -6,6 +6,7 @@ IPv6 sweep -> continuous diff. Mirrors guide Block 1.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from ..config import Config
@@ -22,6 +23,30 @@ def _domain_targets(cfg: Config, target: dict) -> list[str]:
     if target["type"] in ("domain", "url"):
         return [target["value"].replace("https://", "").replace("http://", "").split("/")[0]]
     return [target["value"]]
+
+
+def _scope_regex(domains: list[str]) -> "re.Pattern[str]":
+    """Regex matching the target apex or any subdomain of it, and nothing else."""
+    alts = "|".join(re.escape(d) for d in sorted(set(domains), key=len, reverse=True))
+    return re.compile(rf"(?<![\w.-])((?:[a-z0-9_-]+\.)*(?:{alts}))(?![\w.-])", re.IGNORECASE)
+
+
+def _extract_scoped(text: str, rx: "re.Pattern[str]") -> set[str]:
+    """Pull only in-scope hostnames out of a tool's output file.
+
+    amass v4's ``enum -o`` writes an association *graph*, not a plain host list::
+
+        relay.hantik.ru (FQDN) --> a_record --> 109.120.155.254 (IPAddress)
+        13238 (ASN) --> announces --> 77.88.0.0/18 (Netblock)
+
+    A naive line-by-line merge therefore dumped ASNs, netblocks and bare IPs
+    into the subdomain set -- inflating the reported count with junk, poisoning
+    the httpx/resolve inputs, and seeding ~150k bogus permutations from
+    non-host seeds. Extracting only in-scope FQDN tokens recovers the real
+    names embedded in the graph (``relay.hantik.ru``) and is a no-op for tools
+    that already emit clean, one-host-per-line lists.
+    """
+    return {m.group(1).lower().rstrip(".") for m in rx.finditer(text)}
 
 
 def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
@@ -47,10 +72,11 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
 
     # ---- merge raw (stage 1: passive) ----
     all_raw = state.path("all_subdomains_raw.txt")
+    scope_rx = _scope_regex(domains)
     raw_lines: set[str] = set()
     for f in sub_dir.glob("*.txt"):
         if f.exists():
-            raw_lines |= {l.strip() for l in f.read_text(encoding="utf-8").splitlines() if l.strip()}
+            raw_lines |= _extract_scoped(f.read_text(encoding="utf-8", errors="ignore"), scope_rx)
 
     # ---- Stage 2: brute + Stage 3: permutations ----
     resolvers = cfg.path(cfg.general.resolvers_file)
@@ -89,7 +115,7 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         for extra in (sub_dir / "puredns_brute.txt", sub_dir / "perms_resolved.txt",
                       sub_dir / "altdns_resolved.txt", sub_dir / "gotator_resolved.txt"):
             if extra.exists():
-                raw_lines |= {l.strip() for l in extra.read_text(encoding="utf-8").splitlines() if l.strip()}
+                raw_lines |= _extract_scoped(extra.read_text(encoding="utf-8", errors="ignore"), scope_rx)
 
     all_raw.write_text("\n".join(sorted(raw_lines)) + "\n", encoding="utf-8")
     results["subdomains"] = sorted(raw_lines)
