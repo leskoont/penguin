@@ -16,6 +16,7 @@ from .pipelines.report import build_report
 from .ui.console import console, setup_logging
 from .ui.progress import RichBlockProgress
 from .ui.tables import install_check_table, summary_table
+from .ui.targets import resolve_targets
 
 LOG = logging.getLogger("penguin")
 
@@ -68,7 +69,7 @@ def _top(
         raise typer.Exit(0)
 
 
-@app.command("run", help="run full pipeline")
+@app.command("run", help="run full pipeline (drops into an interactive wizard if no target resolves and stdin is a TTY)")
 def cmd_run(
     ctx: typer.Context,
     target: Optional[str] = typer.Option(None, "--target", help="single domain to scan"),
@@ -85,9 +86,7 @@ def cmd_run(
     if cfg.proxies.enabled:
         valid = pool.refresh(force=refresh_proxies)
         LOG.info("[proxies] %d valid proxies in pool", len(valid))
-    resolved = load_targets(targets_path)
-    if target:
-        resolved = [{"type": "domain", "value": target}]
+    resolved = resolve_targets(cfg, targets_path, target)
     if not resolved:
         LOG.error("no targets; pass --target or populate config/targets.txt")
         return 1
