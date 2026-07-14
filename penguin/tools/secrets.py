@@ -58,8 +58,14 @@ def gitleaks(ctx: ToolContext, source: Path, out: Path) -> Optional[Path]:
 
 
 def github_subdomains(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
+    # github-subdomains requires a GitHub token (-t or GITHUB_TOKEN env) --
+    # without one it just dumps its usage banner and exits nonzero every
+    # time. -o itself is a real flag; the token was the actual missing piece.
+    if not ctx.cfg.paid_enabled("github"):
+        return None
     cmd = ["github-subdomains", "-d", domain, "-o", str(out)]
-    r = ctx.execute("github-subdomains", cmd, timeout=300)
+    r = ctx.execute("github-subdomains", cmd, timeout=300,
+                     extra_env={"GITHUB_TOKEN": ctx.cfg.paid_key("github")})
     return out if out.exists() else None
 
 

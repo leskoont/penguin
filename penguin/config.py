@@ -79,6 +79,7 @@ class Config:
         "censys": PaidService(api_id_env="CENSYS_ID", api_secret_env="CENSYS_SECRET"),
         "securitytrails": PaidService(api_key_env="SECURITYTRAILS_KEY"),
         "chaos": PaidService(api_key_env="CHAOS_KEY"),
+        "github": PaidService(api_key_env="GITHUB_TOKEN"),
         "grayhat": PaidService(api_key_env="GRAYHAT_KEY"),
         "netlas": PaidService(api_key_env="NETLAS_KEY"),
         "fofa": PaidService(api_key_env="FOFA_KEY"),
