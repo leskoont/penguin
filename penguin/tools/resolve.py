@@ -48,7 +48,11 @@ def dnsx(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path, *, ipv6: b
 
 def dnsgen(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     cmd = ["dnsgen", str(in_file)]
-    r = ctx.execute("dnsgen", cmd, timeout=300)
+    # retries=1: dnsgen doesn't use the proxy pool (not in _base's proxy_flag
+    # map), so the default 3x "re-pick a proxy" budget applies no proxy and just
+    # replays a full 300s timeout up to three times -- 15 min of dead wall-clock
+    # for a permutation set that would be identical on every attempt.
+    r = ctx.execute("dnsgen", cmd, timeout=300, retries=1)
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out
@@ -64,7 +68,11 @@ def altdns(ctx: ToolContext, in_file: Path, words: Path, out: Path, resolved: Pa
 def gotator(ctx: ToolContext, in_file: Path, out: Path, words: Path) -> Optional[Path]:
     # gotator has no -o/output flag at all -- it only ever writes to stdout.
     cmd = ["gotator", "-sub", str(in_file), "-perm", str(words), "-depth", "2"]
-    r = ctx.execute("gotator", cmd, timeout=300)
+    # retries=1: same as dnsgen/puredns -- gotator isn't proxied, so replaying a
+    # hit 300s timeout 3x buys nothing but wall-clock. This is the retry storm
+    # observed adding ~15 min to a run ("[retry 1/3] gotator -> timeout after
+    # 300s") before the block would even finish.
+    r = ctx.execute("gotator", cmd, timeout=300, retries=1)
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out
