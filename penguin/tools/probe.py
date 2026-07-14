@@ -54,6 +54,10 @@ def httpx_simple(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
 
 
 def nuclei_tech(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
-    cmd = ["nuclei", "-l", str(in_file), "-t", "technologies/", "-o", str(out)]
+    # nuclei-templates' current layout nests everything under http/ (verified
+    # live against the repo) -- a bare "technologies/" matches nothing, so
+    # nuclei ran with zero loaded templates every time ("no templates
+    # provided for scan") instead of actually fingerprinting anything.
+    cmd = ["nuclei", "-l", str(in_file), "-t", "http/technologies/", "-o", str(out)]
     r = ctx.execute("nuclei", cmd, timeout=600)
     return out if out.exists() else None

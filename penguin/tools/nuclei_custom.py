@@ -17,7 +17,11 @@ def nuclei_scan(ctx: ToolContext, in_file: Path, out: Path, *,
     if custom_only:
         cmd += ["-t", str(ctx.cfg.path(TEMPLATES_DIR))]
     else:
-        cmd += ["-t", "cves/", "-t", "misconfigurations/", "-t", str(ctx.cfg.path(TEMPLATES_DIR))]
+        # nuclei-templates' current layout: everything lives under http/, and
+        # it's "misconfiguration" (singular) -- the old "cves/"/"misconfigurations/"
+        # paths matched nothing, so a non-custom_only scan silently loaded zero
+        # official templates every run.
+        cmd += ["-t", "http/cves/", "-t", "http/misconfiguration/", "-t", str(ctx.cfg.path(TEMPLATES_DIR))]
     r = ctx.execute("nuclei", cmd, timeout=3600, log_stdout=False)
     return out if out.exists() else None
 
@@ -27,7 +31,7 @@ def nuclei_update(ctx: ToolContext) -> bool:
     # actual argv is the second arg and must include the binary name itself.
     # Without it, runner.run() took "-update-templates" as cmd[0], couldn't
     # find that "binary" on PATH, and skipped -- so the official templates
-    # dir (needed by probe.nuclei_tech's -t technologies/) was never fetched
-    # and its scans always failed with "Could not find template".
+    # dir (needed by probe.nuclei_tech's -t http/technologies/) was never
+    # fetched and its scans always failed with "Could not find template".
     r = ctx.execute("nuclei", ["nuclei", "-update-templates"], timeout=300)
     return r.ok
