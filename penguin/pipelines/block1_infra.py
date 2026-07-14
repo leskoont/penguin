@@ -95,8 +95,12 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
 
     live_csv = state.path("live", run=True) / "httpx.csv"
     live_csv.parent.mkdir(parents=True, exist_ok=True)
+    # -screenshot makes httpx shell out to go-rod, which needs a real Chrome
+    # binary and will try (and, offline/sandboxed, fail) to auto-download
+    # one -- only pay that cost when screenshots are actually wanted.
+    shots_dir = state.path("screenshots", run=True) if ctx.cfg.general.screenshots else None
     pb.httpx(ctx, resolved_file if resolved_file.exists() else all_raw, live_csv,
-             screenshots_dir=state.path("screenshots", run=True))
+             screenshots_dir=shots_dir)
     results["resolved"] = state.read_lines("resolved.txt")
     if live_csv.exists():
         results["live"] = state.read_lines("live/httpx.csv")

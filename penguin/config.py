@@ -63,6 +63,7 @@ class GeneralConfig:
     wordlists_dir: str = "wordlists"
     retry_attempts: int = 3
     retry_backoff: float = 2.0
+    screenshots: bool = False
 
 
 @dataclass

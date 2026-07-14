@@ -12,6 +12,10 @@ general:
   wordlists_dir: wordlists
   retry_attempts: 3
   retry_backoff: 2.0
+  # httpx -screenshot needs a real Chrome/Chromium binary (via go-rod) and
+  # will try to auto-download one if missing, which can fail outright in
+  # offline/sandboxed environments. Off by default; flip on if you want them.
+  screenshots: false
 
 stages:
   infra: true
