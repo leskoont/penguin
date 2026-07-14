@@ -14,15 +14,20 @@ SWAGGER_PATHS = [
 
 
 def probe_swagger(ctx: ToolContext, base_url: str, out: Path) -> Optional[Path]:
-    found = []
-    for path in SWAGGER_PATHS:
+    import concurrent.futures
+
+    def check(path: str) -> Optional[str]:
         # -k: cert trust doesn't matter for a read-only probe. retries=1:
         # called once per host over 13 speculative paths -- the default 3x
         # retry budget per path multiplies fast across hosts.
         cmd = ["curl", "-sk", "-o", "/dev/null", "-w", "%{http_code}", f"{base_url}{path}"]
         r = ctx.execute("curl", cmd, timeout=30, retries=1)
-        if r.ok and "200" in r.stdout:
-            found.append(path)
+        return path if (r.ok and "200" in r.stdout) else None
+
+    # 13 independent speculative probes against the same host -- run
+    # concurrently instead of paying each 30s timeout back-to-back.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(SWAGGER_PATHS))) as ex:
+        found = [p for p in ex.map(check, SWAGGER_PATHS) if p]
     if found:
         out.write_text("\n".join(found) + "\n", encoding="utf-8")
         return out
