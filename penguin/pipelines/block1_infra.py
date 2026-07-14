@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import logging
 import re
+from functools import partial
 from pathlib import Path
 
 from ..config import Config
+from ..parallel import run_parallel
 from ..state import RunState
 from ..tools import subdomain as sd
 from ..tools import resolve as rs
@@ -60,15 +62,26 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     sub_dir = state.sub("subdomains")
 
     # ---- Stage 1: passive ----
+    # Each source writes its own distinct output file and none of them touch
+    # the target host (they query subfinder/amass/crt.sh/chaos aggregators),
+    # so the whole fan-out is safe to overlap: wall-clock collapses from the
+    # *sum* of every source's timeout to roughly the slowest single source
+    # (amass). ToolContext.execute picks proxies under a lock, so concurrent
+    # calls are thread-safe. See penguin/parallel for the safety contract.
+    passive_tasks: list = []
     for domain in domains:
         logger.info("[block1] passive enum: %s", domain)
-        sd.subfinder(ctx, domain, sub_dir / f"subfinder_{domain}.txt")
-        sd.amass_passive(ctx, domain, sub_dir / f"amass_{domain}.txt")
-        sd.assetfinder(ctx, domain, sub_dir / f"assetfinder_{domain}.txt")
-        sd.findomain(ctx, domain, sub_dir / f"findomain_{domain}.txt")
-        sd.chaos(ctx, domain, sub_dir / f"chaos_{domain}.txt")
-        sd.crtsh(ctx, domain, sub_dir / f"crtsh_{domain}.txt")
-        sd.amass_intel(ctx, domain.split(".")[0], sub_dir / f"amass_intel_{domain}.txt")
+        passive_tasks += [
+            partial(sd.subfinder, ctx, domain, sub_dir / f"subfinder_{domain}.txt"),
+            partial(sd.amass_passive, ctx, domain, sub_dir / f"amass_{domain}.txt"),
+            partial(sd.assetfinder, ctx, domain, sub_dir / f"assetfinder_{domain}.txt"),
+            partial(sd.findomain, ctx, domain, sub_dir / f"findomain_{domain}.txt"),
+            partial(sd.chaos, ctx, domain, sub_dir / f"chaos_{domain}.txt"),
+            partial(sd.crtsh, ctx, domain, sub_dir / f"crtsh_{domain}.txt"),
+            partial(sd.amass_intel, ctx, domain.split(".")[0], sub_dir / f"amass_intel_{domain}.txt"),
+        ]
+    run_parallel(passive_tasks, max_workers=cfg.general.max_parallel_tools,
+                 label="block1 passive enum")
 
     # ---- merge raw (stage 1: passive) ----
     all_raw = state.path("all_subdomains_raw.txt")
