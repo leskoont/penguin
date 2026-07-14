@@ -53,7 +53,7 @@ class ToolContext:
         return mapping.get(tool, [])
 
     def execute(self, tool: str, cmd: list, *, timeout: Optional[float] = None, log_stdout: bool = False,
-                extra_env: Optional[dict] = None):
+                extra_env: Optional[dict] = None, retries: Optional[int] = None, input: Optional[str] = None):
         proxy = self.proxy_for(tool)
         if proxy:
             cmd += self.proxy_flag(tool, proxy)
@@ -61,8 +61,8 @@ class ToolContext:
         env = None
         if extra_env:
             env = {**os.environ, **extra_env}
-        return run(cmd, retries=self.cfg.general.retry_attempts, backoff=self.cfg.general.retry_backoff,
-                   timeout=to, log_stdout=log_stdout, env=env)
+        return run(cmd, retries=retries if retries is not None else self.cfg.general.retry_attempts,
+                   backoff=self.cfg.general.retry_backoff, timeout=to, log_stdout=log_stdout, env=env, input=input)
 
     def curl_with_secret(self, curl_args: list[str], directives: list[str], *, timeout: Optional[float] = None):
         """Run curl with credentials passed via a temp ``-K`` config file instead of
