@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -32,6 +33,14 @@ _BLOCK_FALLBACKS: dict[int, dict] = {
     3: {"open_db": [], "buckets": []},
     4: {"origin_ips": [], "exposed_git": [], "secrets": []},
 }
+
+# Ordered block sequence for run_target's cancel-between-blocks loop below.
+_BLOCKS: list[tuple[int, str, Callable]] = [
+    (1, "infra", run_block1),
+    (2, "web", run_block2),
+    (3, "cloud_db", run_block3),
+    (4, "elite", run_block4),
+]
 
 
 def _emit(cb: Optional[ProgressCb], block_num: int, name: str, phase: str) -> None:
@@ -66,14 +75,27 @@ def _run_block(cfg: Config, state: RunState, target: dict, progress_cb: Optional
     return result
 
 
-def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = None) -> dict:
+def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = None,
+               cancel_event: Optional[threading.Event] = None) -> dict:
     state = RunState(cfg, target["value"])
     logger.info("=== penguin run %s -> %s ===", target["value"], state.run_dir)
 
-    b1 = _run_block(cfg, state, target, progress_cb, 1, "infra", run_block1)
-    b2 = _run_block(cfg, state, target, progress_cb, 2, "web", run_block2)
-    b3 = _run_block(cfg, state, target, progress_cb, 3, "cloud_db", run_block3)
-    b4 = _run_block(cfg, state, target, progress_cb, 4, "elite", run_block4)
+    # Cancellation is checked between blocks (not mid-block -- individual
+    # tool subprocesses can't be cleanly interrupted from here). Once the
+    # caller signals cancel_event (e.g. the TUI on quit), stop launching any
+    # further blocks; blocks that never ran degrade to the same empty-result
+    # shape as a block that raised (see _BLOCK_FALLBACKS), so downstream
+    # accumulate/diff/notify/archive/report all still see a valid dict.
+    results: dict[int, dict] = {}
+    for block_num, name, run_fn in _BLOCKS:
+        if cancel_event is not None and cancel_event.is_set():
+            logger.info("[%s] cancellation requested -- stopping before block%d:%s",
+                        target["value"], block_num, name)
+            break
+        results[block_num] = _run_block(cfg, state, target, progress_cb, block_num, name, run_fn)
+    for block_num, _name, _run_fn in _BLOCKS:
+        results.setdefault(block_num, {k: list(v) for k, v in _BLOCK_FALLBACKS[block_num].items()})
+    b1, b2, b3, b4 = results[1], results[2], results[3], results[4]
 
     # accumulate into per-target history files (anew dedup). Wrapped so a
     # failure here (e.g. a corrupt live/httpx.csv) can't skip diff/notify/

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import traceback
 
 from textual import work
 from textual.app import App, ComposeResult
@@ -44,6 +46,12 @@ class PenguinTUI(App):
         self.cfg = cfg
         self.target = target
         self._summary: dict | None = None
+        # Set on quit (action_quit below) and checked between blocks inside
+        # run_target -- a plain background thread can't be forcibly killed
+        # or interrupted mid-synchronous-call, so this is the only way to
+        # get the worker to stop launching further blocks once the user
+        # has asked to quit.
+        self._cancel_event = threading.Event()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -68,6 +76,18 @@ class PenguinTUI(App):
     def _progress_cb(self, block_num: int, name: str, phase: str) -> None:
         self.call_from_thread(self.update_progress, block_num, name, phase)
 
+    async def action_quit(self) -> None:
+        """Signal the background recon worker to stop before exiting.
+
+        Textual's default action_quit just tears down the event loop -- it
+        has no way to interrupt a synchronous @work(thread=True) call chain.
+        Setting the cancel event lets run_target notice between blocks and
+        stop launching further ones instead of continuing to run orphaned
+        after the UI is gone.
+        """
+        self._cancel_event.set()
+        self.exit()
+
     @work(thread=True)
     def run_recon(self) -> None:
         logger = logging.getLogger("penguin")
@@ -78,10 +98,16 @@ class PenguinTUI(App):
             logger.removeHandler(h)
         logger.addHandler(handler)
         try:
-            summary = run_target(self.cfg, self.target, progress_cb=self._progress_cb)
+            summary = run_target(self.cfg, self.target, progress_cb=self._progress_cb,
+                                  cancel_event=self._cancel_event)
             self._summary = summary
             build_report(self.cfg, self.target, summary)
             self.call_from_thread(self._show_summary, summary)
+        except Exception:
+            # Otherwise a raise here is a silent Textual worker failure:
+            # #progress stays frozen on the last block label and #summary
+            # stays empty with no indication anything went wrong.
+            self.call_from_thread(self.write_log, traceback.format_exc())
         finally:
             logger.removeHandler(handler)
             for h in prev_handlers:
