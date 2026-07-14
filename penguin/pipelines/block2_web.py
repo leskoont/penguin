@@ -89,7 +89,14 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         sc.linkfinder(ctx, Path(js), endpoints_file)
         sc.secretfinder(ctx, Path(js), secrets_file)
         local_js = js_dl_dir / f"{i}.js"
-        ctx.execute("curl", ["curl", "-s", "-o", str(local_js), js], timeout=30)
+        # retries=1: this runs in a loop over every discovered JS URL (can be
+        # 50-100+), each re-picking a proxy on retry -- at the default 3
+        # attempts, a proxy pool with a high dead-proxy rate turns this single
+        # best-effort download step into the dominant cost of the whole block
+        # (observed: 30+ min, still running, on a pool full of SOCKS-closed /
+        # SSL-handshake failures). One shot per file, same pattern as the
+        # cloud.py/api.py/gitcicd.py per-candidate curl loops.
+        ctx.execute("curl", ["curl", "-s", "-o", str(local_js), js], timeout=30, retries=1)
     js_files = list(js_dl_dir.glob("*.js"))
     if js_files:
         sc.jsluice(ctx, " ".join(str(f) for f in js_files), state.path("content/jsluice.txt"))
