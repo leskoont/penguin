@@ -4,6 +4,7 @@ wordlists, diffs against previous run and notifies on new assets.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -53,7 +54,16 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
     # accumulate into per-target history files (anew dedup)
     state.add_lines("all_subdomains.txt", b1["subdomains"])
     state.add_lines("all_urls.txt", b2.get("endpoints", []))
-    state.add_lines("live_hosts.txt", state.read_lines("live/httpx.csv"))
+    # live/httpx.csv rows are "url,input,title,..." (httpx -csv output), not
+    # bare URLs -- appending them raw would pollute live_hosts.txt (which
+    # block2/block4 treat as a clean URL-per-line list) with CSV headers and
+    # multi-field rows. Extract just the URL column, same as block2_web.py.
+    live_urls = []
+    for row in state.read_lines("live/httpx.csv"):
+        m = re.match(r'"??(https?://[^",]+)', row)
+        if m:
+            live_urls.append(m.group(1).strip('"'))
+    state.add_lines("live_hosts.txt", live_urls)
 
     # self-learning wordlist
     wm = WordlistManager(cfg)
