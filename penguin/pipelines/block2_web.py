@@ -123,27 +123,30 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     kite = cfg.path("wordlists/routes-large.kite")
     api_dir = state.sub("api")
 
-    def _api_probe(h: str) -> list[str]:
+    def _api_probe(idx: int, h: str) -> list[str]:
         # One task per host: the three probes stay serial *within* a host (so a
         # single server is never hammered by concurrent probes) while different
         # hosts overlap. Each probe writes its own distinct file. Returns the
         # found-output paths in order so the merged results list is identical to
         # the old sequential loop.
-        safe = re.sub(r'[^a-z0-9]', '', h)
+        # Slug alone can collide (e.g. "api.example.com" and "api-example.com"
+        # both -> "apiexamplecom"), which would let two concurrent tasks clobber
+        # the same file; key on host index too, same as block3's bucket parts.
+        safe = re.sub(r'[^a-z0-9]', '', h.lower())
         found: list[str] = []
-        swagger_out = ap.probe_swagger(ctx, h, api_dir / f"swagger_{safe}.txt")
+        swagger_out = ap.probe_swagger(ctx, h, api_dir / f"swagger_{idx}_{safe}.txt")
         if swagger_out:
             found.append(str(swagger_out))
-        graphql_out = ap.graphql_introspection(ctx, h.rstrip("/") + "/graphql", api_dir / f"graphql_{safe}.json")
+        graphql_out = ap.graphql_introspection(ctx, h.rstrip("/") + "/graphql", api_dir / f"graphql_{idx}_{safe}.json")
         if graphql_out:
             found.append(str(graphql_out))
         grpc_host = re.sub(r"^https?://", "", h).split("/")[0]
-        grpc_out = ap.grpcurl_list(ctx, f"{grpc_host}:443", api_dir / f"grpc_{safe}.txt")
+        grpc_out = ap.grpcurl_list(ctx, f"{grpc_host}:443", api_dir / f"grpc_{idx}_{safe}.txt")
         if grpc_out:
             found.append(str(grpc_out))
         return found
 
-    for found in run_parallel([partial(_api_probe, h) for h in hosts[:10]],
+    for found in run_parallel([partial(_api_probe, i, h) for i, h in enumerate(hosts[:10])],
                               max_workers=cfg.general.max_parallel_tools,
                               label="block2 api recon"):
         if found:
