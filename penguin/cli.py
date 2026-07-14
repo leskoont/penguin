@@ -14,7 +14,7 @@ from .proxies import get_pool
 from .pipelines.master import run_target
 from .pipelines.report import build_report
 from .ui.console import console, setup_logging
-from .ui.progress import RichBlockProgress
+from .ui.progress import RichBlockProgress, refresh_proxy_pool
 from .ui.tables import install_check_table, summary_table
 from .ui.targets import resolve_targets
 
@@ -84,7 +84,7 @@ def cmd_run(
     cfg = load(cfg_path)
     pool = get_pool(cfg)
     if cfg.proxies.enabled:
-        valid = pool.refresh(force=refresh_proxies)
+        valid = refresh_proxy_pool(pool, console, force=refresh_proxies)
         LOG.info("[proxies] %d valid proxies in pool", len(valid))
     resolved = resolve_targets(cfg, targets_path, target)
     if not resolved:
@@ -119,7 +119,7 @@ def cmd_continuous(
     while True:
         pool = get_pool(cfg)
         if cfg.proxies.enabled:
-            pool.refresh(force=True)
+            refresh_proxy_pool(pool, console, force=True)
         for t in resolved:
             try:
                 summary = run_target(cfg, t)
@@ -147,7 +147,7 @@ def cmd_self_test(
     pool = get_pool(cfg)
     if cfg.proxies.enabled:
         try:
-            valid = pool.refresh(force=True)
+            valid = refresh_proxy_pool(pool, console, force=True)
             LOG.info("[selftest] proxies: %d valid", len(valid))
         except Exception as exc:  # noqa
             LOG.warning("[selftest] proxies fetch failed (network?): %s", exc)
@@ -247,7 +247,7 @@ def cmd_proxies(
     cfg_path, _ = _merge(ctx, verbose, config, targets)
     cfg = load(cfg_path)
     pool = get_pool(cfg)
-    valid = pool.refresh(force=True)
+    valid = refresh_proxy_pool(pool, console, force=True)
     LOG.info("[proxies] %d valid (http/socks5) -> %s", len(valid), cfg.proxies.pool_file)
     return 0
 

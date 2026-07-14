@@ -34,3 +34,12 @@ class RichBlockProgress:
         style = "bold cyan" if phase == "start" else "green"
         suffix = "..." if phase == "start" else " done"
         self._progress.update(self._task_id, description=f"[{style}]{label}{suffix}[/]")
+
+
+def refresh_proxy_pool(pool, console: Console, force: bool = True):
+    """Refresh the proxy pool behind a status spinner. Validating hundreds
+    of free-proxy candidates against a live endpoint can take minutes with
+    no other output in between, which otherwise looks like a hang."""
+    # spinner="line" for the same cp1251-safety reason as RichBlockProgress.
+    with console.status("[cyan]refreshing proxy pool...[/]", spinner="line"):
+        return pool.refresh(force=force)
