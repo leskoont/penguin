@@ -244,25 +244,54 @@ mkdir -p wordlists results/proxies reports
 fetch_wordlist() {
   local path="$1" url="$2" label="$3"
   # Machines that ran an older version of this script (curl -sL, no -f) may
-  # already have an HTML error/CDN-block page sitting in $path from before
-  # that fix landed -- non-empty, so the -s guard below would trust it
-  # forever. That's exactly what "failed to decode kite file: failed to
-  # unmarshal data: proto: ..." from kiterunner turned out to be: an HTML
-  # body fed to a binary protobuf parser. Sniff for it and force a refetch.
-  if [ -s "$path" ] && head -c 512 "$path" 2>/dev/null | grep -qi '<html\|<!doctype'; then
-    log "  ! $label: existing file looks like an HTML error page, refetching"
-    rm -f "$path"
+  # already have an error page sitting in $path from before that fix landed --
+  # non-empty, so the -s guard below would trust it forever. Two shapes:
+  #   * a CDN/HTML block page ("failed to decode kite file: ... proto:" from
+  #     kiterunner was exactly this -- an HTML body fed to a protobuf parser).
+  #   * GitHub raw's plain-text "404: Not Found" (14 bytes) when an upstream
+  #     path 404s -- NOT html, so the old <html sniff missed it, and it then
+  #     poisoned resolvers.txt so massdns died with "error resolving domains:
+  #     exit status 1" (a literal "404: Not Found" used as a DNS resolver).
+  # Every wordlist below is >100 KB, so anything suspiciously small or that
+  # looks like an error page is garbage -- drop it and refetch.
+  if [ -s "$path" ]; then
+    local sz; sz=$(wc -c < "$path" 2>/dev/null || echo 0)
+    if [ "$sz" -lt 1024 ] || head -c 512 "$path" 2>/dev/null | grep -qiE '<html|<!doctype|^404:|^not found'; then
+      log "  ! $label: existing file looks truncated/error page (${sz}b), refetching"
+      rm -f "$path"
+    fi
   fi
   [ -s "$path" ] && return 0
   log "fetching $label"
-  curl -fsL "$url" -o "$path" 2>/dev/null || { rm -f "$path"; log "  ! $label fetch failed"; }
+  curl -fsL "$url" -o "$path" 2>/dev/null || { rm -f "$path"; log "  ! $label fetch failed"; return; }
+  # -f rejects HTTP errors, but a 200-with-short-error-body still slips past;
+  # every real wordlist here is >100 KB, so a sub-1 KB result is bogus.
+  if [ ! -s "$path" ] || [ "$(wc -c < "$path" 2>/dev/null || echo 0)" -lt 1024 ]; then
+    log "  ! $label: fetched file too small, discarding"; rm -f "$path"
+  fi
 }
 
-fetch_wordlist wordlists/resolvers.txt https://raw.githubusercontent.com/tomnomnom/httprobe/master/resolvers.txt "resolvers"
-fetch_wordlist wordlists/subdomains-large.txt https://wordlists-cdn.assetnote.io/data/us_subdomains.txt "subdomains-large (assetnote)"
-fetch_wordlist wordlists/directory-list-2.3-medium.txt https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt "directory wordlist (SecLists)"
-fetch_wordlist wordlists/routes-large.kite https://wordlists-cdn.assetnote.io/data/kiterunner/routes-large.kite "kiterunner routes-large.kite"
-fetch_wordlist wordlists/permutation-words.txt https://raw.githubusercontent.com/six2dez/OneListForAll/main/permutations_list.txt "permutation words (OneListForAll)"
+# kiterunner ships its route corpus as a gzipped tarball (the old raw .kite URL
+# now 404s); download + extract to wordlists/routes-large.kite.
+fetch_kite() {
+  local out="wordlists/routes-large.kite"
+  local url="https://wordlists-cdn.assetnote.io/data/kiterunner/routes-large.kite.tar.gz"
+  [ -s "$out" ] && return 0
+  log "fetching kiterunner routes-large.kite"
+  if curl -fsL "$url" -o wordlists/routes-large.kite.tar.gz 2>/dev/null \
+     && tar -xzf wordlists/routes-large.kite.tar.gz -C wordlists 2>/dev/null; then
+    :
+  else
+    log "  ! kiterunner routes fetch/extract failed"
+  fi
+  rm -f wordlists/routes-large.kite.tar.gz
+}
+
+fetch_wordlist wordlists/resolvers.txt https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt "resolvers (trickest)"
+fetch_wordlist wordlists/subdomains-large.txt https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-110000.txt "subdomains-large (SecLists 110k)"
+fetch_wordlist wordlists/directory-list-2.3-medium.txt https://raw.githubusercontent.com/3ndG4me/KaliLists/master/dirbuster/directory-list-2.3-medium.txt "directory wordlist (dirbuster)"
+fetch_kite
+fetch_wordlist wordlists/permutation-words.txt https://raw.githubusercontent.com/infosec-au/altdns/master/words.txt "permutation words (altdns)"
 fetch_wordlist wordlists/params.txt https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/burp-parameter-names.txt "param names (SecLists)"
 [ -f wordlists/learned.txt ] || touch wordlists/learned.txt
 
