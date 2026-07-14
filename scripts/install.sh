@@ -136,6 +136,14 @@ done
 # hasn't been updated since ~2019 and imports the `imp` module, removed in
 # Python 3.12 -- if the system's default python3 is 3.12+, retry pinned to
 # whatever older interpreter happens to be on PATH before giving up.
+# NOTE: even when the install below succeeds, altdns can still fail *at
+# runtime* with "ImportError: cannot import name 'LOG' from
+# 'tldextract.tldextract'" -- altdns imports a private tldextract symbol
+# that newer tldextract releases (pulled in unpinned) no longer expose. This
+# is an unresolved upstream incompatibility (see
+# https://github.com/infosec-au/altdns/issues/15), not a penguin bug, and no
+# tldextract version is confirmed compatible -- left undiagnosed further
+# rather than guessing a pin that might not actually work.
 command -v altdns >/dev/null 2>&1 || {
   log "  installing altdns via pipx (py-altdns)"
   if ! pipx install py-altdns 2>/dev/null; then
