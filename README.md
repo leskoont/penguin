@@ -72,6 +72,9 @@ penguin.bat run --target example.com          # Windows cmd
 # all targets from config/targets.txt
 ./penguin run
 
+# live textual dashboard for a single target
+./penguin tui --target example.com
+
 # continuous recon (diff + notify every 6h)
 ./penguin continuous --interval 6h
 
@@ -81,6 +84,11 @@ penguin.bat run --target example.com          # Windows cmd
 # validate config + diff engine + proxies
 ./penguin self-test
 ```
+
+If `penguin run` is invoked with no `--target` and `config/targets.txt` is
+empty, it drops into an interactive wizard to pick a target and stages
+(only when stdin is a real TTY — non-interactive/CI invocations fall
+straight through to the existing "no targets" error, unchanged).
 
 (You can also run `python -m penguin` directly from the project root.)
 
