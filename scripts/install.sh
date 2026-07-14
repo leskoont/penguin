@@ -180,6 +180,26 @@ install_py_script_tool SecretFinder   "https://github.com/m4ll0k/SecretFinder"  
 install_py_script_tool cloud_enum     "https://github.com/initstring/cloud_enum"          "cloud_enum.py"
 install_py_script_tool gcpbucketbrute "https://github.com/RhinoSecurityLabs/GCPBucketBrute" "gcpbucketbrute.py"
 
+# puredns (installed above via go install) shells out to a separate massdns
+# binary at runtime -- go install can't produce it (massdns is a C project,
+# not a Go module), and it wasn't installed anywhere else either, so every
+# puredns call failed with "unable to execute massdns: exec: massdns:
+# executable file not found in $PATH" (permanent failure, zero DNS-bruteforce
+# resolution, on every single run). Try apt first, else build from source.
+command -v massdns >/dev/null 2>&1 || {
+  log "installing massdns (puredns dependency)"
+  sudo apt-get install -y massdns 2>/dev/null || {
+    log "  massdns not in apt; building from source"
+    dest="$TOOLS_DIR/massdns"
+    [ -d "$dest" ] || git clone --depth 1 https://github.com/blechschmidt/massdns "$dest" 2>/dev/null
+    if [ -d "$dest" ]; then
+      make -C "$dest" 2>/dev/null && install -m 0755 "$dest/bin/massdns" "$BIN_DIR/massdns" || log "  ! massdns: build failed"
+    else
+      log "  ! massdns: clone failed"
+    fi
+  }
+}
+
 # gitdumper: bash script (GitTools), not Python -- same clone pattern, no venv needed
 command -v gitdumper >/dev/null 2>&1 || {
   log "  installing gitdumper (git clone)"
