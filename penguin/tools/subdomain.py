@@ -10,7 +10,12 @@ from ._base import ToolContext
 def subfinder(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     cmd = ["subfinder", "-d", domain, "-all", "-recursive", "-silent", "-o", str(out)]
     cmd += ctx.threads_flag("subfinder", 50)
-    r = ctx.execute("subfinder", cmd, log_stdout=False)
+    # -all -recursive fans out across 30+ passive sources and a recursive
+    # brute stage -- the general 30s default timeout (meant for quick single
+    # commands) made this fail every single attempt, every single run
+    # ("timeout after 30s" x3, 100% of the time observed), silently dropping
+    # what should be one of the best subdomain sources.
+    r = ctx.execute("subfinder", cmd, timeout=300, log_stdout=False)
     return out if r.ok else None
 
 
@@ -39,7 +44,10 @@ def assetfinder(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
 
 def findomain(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     cmd = ["findomain", "-t", domain, "-q"]
-    r = ctx.execute("findomain", cmd)
+    # same issue as subfinder above: certificate-transparency + API lookups
+    # routinely run past the general 30s default, which made this fail every
+    # attempt in both observed runs ("timeout after 30s" x3 each time).
+    r = ctx.execute("findomain", cmd, timeout=120)
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out
