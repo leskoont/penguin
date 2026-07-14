@@ -60,8 +60,18 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     if resolvers.exists():
         from ..tools import resolve as rs2
 
-        rs2.puredns_bruteforce(ctx, domains[0], cfg.path("wordlists/subdomains-large.txt"), resolvers,
-                               sub_dir / "puredns_brute.txt")
+        brute_wl = cfg.path("wordlists/subdomains-large.txt")
+        if brute_wl.exists():
+            rs2.puredns_bruteforce(ctx, domains[0], brute_wl, resolvers,
+                                   sub_dir / "puredns_brute.txt")
+        else:
+            # Without this guard puredns is invoked anyway and fails 3x with
+            # "open .../subdomains-large.txt: no such file or directory" -- a
+            # guaranteed-permanent error. Skip loudly instead: a missing brute
+            # wordlist is the single biggest cause of subdomain-count
+            # degradation, so make it visible rather than a buried retry storm.
+            logger.warning("[block1] brute wordlist missing (%s); skipping puredns "
+                           "bruteforce -- run scripts/install.sh to fetch wordlists", brute_wl)
         perms_in = sub_dir / "all_for_perms.txt"
         perms_in.write_text("\n".join(sorted(raw_lines)), encoding="utf-8")
         rs2.dnsgen(ctx, perms_in, sub_dir / "dnsgen_perms.txt")
