@@ -34,27 +34,30 @@ Pipeline blocks (mirror the guide):
 
 ## Install
 
-penguin manages its own Python virtualenv automatically: the **first** `run`
-creates `.venv/`, installs `requirements.txt` into it, and re-executes inside
-that venv. Every later run re-enters the same venv (deps are not reinstalled
-unless the marker is missing). No manual `pip install` / `venv` steps needed.
+penguin manages its own Python virtualenv **and** its recon toolchain
+automatically: the **first** `run` creates `.venv/`, installs
+`requirements.txt` into it, runs the OS-appropriate installer
+(`scripts/install.sh` on WSL/Linux/macOS, `scripts/install.ps1` on native
+Windows) to pull in Go-based recon tools + wordlists, and re-executes inside
+that venv. Every later run re-enters the same venv and skips both install
+steps (each is gated by its own marker in `.venv/`). No manual `pip install`
+/ `venv` / installer steps needed.
 
 ```bash
-# WSL / Linux (installs Go + all tools + wordlists)
-bash scripts/install.sh
-
-# Windows (best-effort: wordlists + pip deps; run Go tools under WSL)
-pwsh scripts/install.ps1
-
 # verify what's present
 python -m penguin install-check
+
+# run the installers by hand if you ever need to (same scripts penguin
+# invokes automatically on first run)
+bash scripts/install.sh    # WSL / Linux / macOS: Go + all tools + wordlists
+pwsh scripts/install.ps1   # Windows: best-effort, wordlists + pip deps only
 ```
 
 Virtualenv control:
 
 ```bash
 python -m penguin run --no-venv          # skip .venv, use current interpreter
-python -m penguin run --reinstall-venv   # force reinstall deps into .venv
+python -m penguin run --reinstall-venv   # force reinstall deps + rerun the toolchain installer
 PENGUIN_NO_VENV=1 python -m penguin run  # same as --no-venv
 ```
 

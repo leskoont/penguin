@@ -4,7 +4,13 @@ On the first run (and every subsequent run) penguin ensures a local ``.venv``
 exists, installs ``requirements.txt`` into it, and re-executes itself inside
 that venv. Subsequent runs skip the (re)install unless the marker is missing.
 
-Disable with ``PENGUIN_NO_VENV=1`` or ``penguin run --no-venv``.
+The first run also invokes the OS-appropriate installer
+(``scripts/install.ps1`` on Windows, ``scripts/install.sh`` elsewhere) to
+pull in the recon toolchain (Go binaries, wordlists), gated by its own
+marker so it likewise only runs once.
+
+Disable with ``PENGUIN_NO_VENV=1`` or ``penguin run --no-venv``. Force
+either step to run again with ``penguin run --reinstall-venv``.
 """
 from __future__ import annotations
 
@@ -17,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VENV = ROOT / ".venv"
 REQ = ROOT / "requirements.txt"
 MARKER = VENV / ".penguin_bootstrapped"
+TOOLS_MARKER = VENV / ".penguin_tools_bootstrapped"
 
 
 def venv_python() -> Path:
@@ -49,6 +56,31 @@ def _install_deps() -> bool:
     return ok
 
 
+def _install_tools() -> bool:
+    script = ROOT / "scripts" / ("install.ps1" if os.name == "nt" else "install.sh")
+    if not script.exists():
+        TOOLS_MARKER.write_text("skip", encoding="utf-8")
+        return True
+    sys.stderr.write(
+        f"[penguin] first run: installing recon toolchain via scripts/{script.name} "
+        "(network access + tool builds, may take several minutes)...\n"
+    )
+    if os.name == "nt":
+        cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+    else:
+        cmd = ["bash", str(script)]
+    rc = subprocess.run(cmd, cwd=str(ROOT), check=False).returncode
+    ok = rc == 0
+    if ok:
+        TOOLS_MARKER.write_text("ok", encoding="utf-8")
+    else:
+        sys.stderr.write(
+            f"[penguin] toolchain install exited {rc}; some tools may be missing "
+            "(see `penguin install-check`). Re-run anytime with: python -m penguin --reinstall-venv\n"
+        )
+    return ok
+
+
 def ensure_venv(argv=None) -> None:
     if os.environ.get("PENGUIN_NO_VENV"):
         return
@@ -64,6 +96,9 @@ def ensure_venv(argv=None) -> None:
 
     if not MARKER.exists():
         _install_deps()
+
+    if not TOOLS_MARKER.exists():
+        _install_tools()
 
     py = venv_python()
     if not py.exists():
