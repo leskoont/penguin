@@ -92,7 +92,11 @@ def cloudflair(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
 
 
 def verify_origin(ctx: ToolContext, domain: str, origin_ip: str, out: Path) -> Optional[Path]:
+    # retries=1: called in a loop over every IP-looking string scraped from
+    # dig/cf_trace/viewdns/securitytrails/censys output -- same "loop over
+    # many candidates" shape as cloud.py's azure_probe/gcs_probe, so it gets
+    # the same one-shot treatment instead of the default 3x proxy-repick budget.
     cmd = ["curl", "-vk", "--resolve", f"{domain}:443:{origin_ip}", f"https://{domain}/", "-o", "/dev/null"]
-    r = ctx.execute("curl", cmd, timeout=60, log_stdout=False)
+    r = ctx.execute("curl", cmd, timeout=60, log_stdout=False, retries=1)
     out.write_text(f"origin={origin_ip} returncode={r.returncode}\nstderr tail:\n{r.stderr[-500:]}\n", encoding="utf-8")
     return out
