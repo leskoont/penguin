@@ -74,7 +74,8 @@ class ToolContext:
         for attempt in range(n):
             proxy = self.proxy_for(tool)
             full_cmd = list(cmd) + self.proxy_flag(tool, proxy) if proxy else list(cmd)
-            result = run(full_cmd, retries=1, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env, input=input)
+            result = run(full_cmd, retries=1, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env,
+                         input=input, log_attempt=(attempt + 1, n))
             if result.ok or is_permanent(cmd[0], result.returncode, result.stderr):
                 return result
             if attempt < n - 1:

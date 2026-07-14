@@ -84,6 +84,7 @@ def run(
     fatal: bool = False,
     log_stdout: bool = False,
     input: Optional[str] = None,
+    log_attempt: Optional[tuple[int, int]] = None,
 ) -> RunResult:
     """Run ``cmd`` (list of args) with retries / exponential backoff.
 
@@ -92,6 +93,12 @@ def run(
     Commands whose failure is classified as permanent (bad flags, missing
     modules, etc.) stop retrying immediately instead of repeating the same
     guaranteed failure ``retries`` times.
+
+    ``log_attempt``, if given, overrides the (attempt, total) pair used in
+    "[retry x/y]" log lines. Callers like ``ToolContext.execute`` that wrap
+    ``run`` in their own outer retry loop (one ``run(..., retries=1)`` per
+    outer attempt, to re-pick a proxy each time) would otherwise always log
+    "1/1" here regardless of which real outer-loop attempt is executing.
     """
     binary = cmd[0]
     resolved = _which(binary)
@@ -107,6 +114,7 @@ def run(
     start = time.time()
     while attempts < max(1, retries):
         attempts += 1
+        log_a, log_n = log_attempt if log_attempt else (attempts, retries)
         try:
             proc = subprocess.run(
                 cmd,
@@ -123,13 +131,13 @@ def run(
                     logger.debug("stdout[%s]: %s", binary, proc.stdout[:500])
                 return RunResult(cmd, proc.returncode, proc.stdout, proc.stderr, attempts, time.time() - start, True)
             last_err = _clean_err(proc.stderr) or f"exit={proc.returncode}"
-            logger.warning("[retry %d/%d] %s -> %s", attempts, retries, binary, last_err[-200:])
+            logger.warning("[retry %d/%d] %s -> %s", log_a, log_n, binary, last_err[-200:])
             if is_permanent(binary, proc.returncode, last_err):
                 logger.warning("[fail-fast] %s -> permanent failure, not retrying", binary)
                 break
         except subprocess.TimeoutExpired as exc:
             last_err = f"timeout after {timeout}s"
-            logger.warning("[retry %d/%d] %s -> %s", attempts, retries, binary, last_err)
+            logger.warning("[retry %d/%d] %s -> %s", log_a, log_n, binary, last_err)
         except FileNotFoundError as exc:
             last_err = str(exc)
             logger.warning("[skip] %s", last_err)
