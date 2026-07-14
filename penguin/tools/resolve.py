@@ -58,8 +58,12 @@ def altdns(ctx: ToolContext, in_file: Path, words: Path, out: Path, resolved: Pa
 
 
 def gotator(ctx: ToolContext, in_file: Path, out: Path, words: Path) -> Optional[Path]:
-    cmd = ["gotator", "-sub", str(in_file), "-perm", str(words), "-depth", "2", "-o", str(out)]
+    # gotator has no -o/output flag at all -- it only ever writes to stdout.
+    cmd = ["gotator", "-sub", str(in_file), "-perm", str(words), "-depth", "2"]
     r = ctx.execute("gotator", cmd, timeout=300)
-    return out if out.exists() else None
+    if r.ok:
+        out.write_text(r.stdout, encoding="utf-8")
+        return out
+    return None
 
 
