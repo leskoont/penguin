@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -155,8 +156,18 @@ def run(
 
 
 def pipe(commands: list[list], *, timeout: Optional[float] = None, fatal: bool = False) -> RunResult:
-    """Chain commands via shell pipes. Returns the final command's result."""
-    procs = []
+    """Chain commands via shell pipes. Returns the final command's result.
+
+    Intermediate stages' stderr is drained on background threads so a chatty
+    upstream tool can't fill its OS pipe buffer and deadlock the chain; every
+    stage's returncode is checked so a crashed early stage (feeding an empty
+    stream to a downstream tool that then exits 0) is still reported as a
+    failure, not silently swallowed.
+    """
+    procs: list[subprocess.Popen] = []
+    # (proc, single-item list used as a mutable box for its drained stderr)
+    stderr_boxes: list[tuple[subprocess.Popen, list]] = []
+    threads: list[threading.Thread] = []
     prev = None
     try:
         for i, cmd in enumerate(commands):
@@ -166,11 +177,90 @@ def pipe(commands: list[list], *, timeout: Optional[float] = None, fatal: bool =
                     raise CommandMissing(cmd[0])
                 return RunResult(cmd, -1, "", "missing binary", 0, 0.0, False)
             inp = prev.stdout if prev else None
-            prev = subprocess.Popen(cmd, stdin=inp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            procs.append(prev)
-        out, err = prev.communicate(timeout=timeout)
-        rc = prev.returncode
-        return RunResult(commands[-1], rc, out, err, 1, 0.0, rc == 0)
+            proc = subprocess.Popen(cmd, stdin=inp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if prev is not None:
+                # drop our copy so the upstream stage sees SIGPIPE/EPIPE if a
+                # downstream stage exits early, instead of blocking forever
+                prev.stdout.close()
+            procs.append(proc)
+            is_last = i == len(commands) - 1
+            if not is_last:
+                # nothing else will ever read this stage's stderr; drain it on
+                # a thread so it can't fill the OS pipe buffer and deadlock
+                box: list = []
+                t = threading.Thread(target=lambda p=proc, b=box: b.append(p.stderr.read()))
+                t.daemon = True
+                t.start()
+                stderr_boxes.append((proc, box))
+                threads.append(t)
+            prev = proc
+        out = ""
+        try:
+            out, last_err = prev.communicate(timeout=timeout)
+            # Bound the *total* remaining cleanup time by `timeout`, not
+            # `timeout` per thread/proc -- reusing the full original timeout on
+            # every join/wait below would let wall-clock balloon to roughly
+            # (1 + num_threads + num_procs) * timeout instead of ~timeout.
+            deadline = time.monotonic() + timeout if timeout is not None else None
+            for t in threads:
+                remaining = max(0, deadline - time.monotonic()) if deadline is not None else None
+                t.join(timeout=remaining)
+            for p in procs:
+                if p.returncode is None:
+                    remaining = max(0, deadline - time.monotonic()) if deadline is not None else None
+                    p.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            # Single attribution-aware handler for BOTH places a timeout can
+            # originate: prev.communicate() on the LAST stage (raised here if
+            # an EARLIER stage is actually hung -- e.g. stage1 sleeps forever
+            # and never closes stdout, so stage2 blocks forever reading it --
+            # in which case communicate() times out before the cleanup loop
+            # below ever runs), and the cleanup loop's own p.wait() timing
+            # out. Either way, never assume *which* proc raised the
+            # exception -- scan procs in pipeline order and attribute to the
+            # first one still running. That's the earliest stage still
+            # alive, which is the one actually blocking everything
+            # downstream of it, not necessarily commands[-1].
+            #
+            # Popen.returncode is only ever populated by poll()/wait()/
+            # communicate() -- it is NOT updated automatically when the OS
+            # process exits on its own. If prev.communicate() on the LAST
+            # stage is what raised TimeoutExpired, none of the earlier
+            # stages have been polled yet, so they'd all still show
+            # returncode is None even if they finished long ago. Do a cheap,
+            # non-blocking poll() pass over every proc first so the scan
+            # below reflects live process state instead of "never checked".
+            for p in procs:
+                p.poll()
+            stuck = next((p for p in procs if p.returncode is None), None)
+            if stuck is not None:
+                stuck_idx = procs.index(stuck)
+                stuck_cmd = commands[stuck_idx]
+                stuck_err = next((box[0] for pp, box in stderr_boxes if pp is stuck and box), "")
+            else:
+                # Every proc already finished by the time we got here (race
+                # between the timeout firing and the last stage exiting) --
+                # nothing to attribute to a specific stage.
+                stuck_cmd = commands[-1] if commands else []
+                stuck_err = ""
+            for p in procs:
+                if p.returncode is None:
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
+            return RunResult(stuck_cmd, -1, out, stuck_err or "timeout", len(procs), 0.0, False)
+        failed = [p for p in procs if p.returncode != 0]
+        if failed:
+            bad = failed[0]
+            bad_idx = procs.index(bad)
+            bad_cmd = commands[bad_idx]
+            if bad is prev:
+                bad_err = last_err
+            else:
+                bad_err = next((box[0] for p, box in stderr_boxes if p is bad and box), "")
+            return RunResult(bad_cmd, bad.returncode, out, bad_err or last_err, len(procs), 0.0, False)
+        return RunResult(commands[-1], prev.returncode, out, last_err, 1, 0.0, True)
     except Exception as exc:  # noqa
         if fatal:
             raise
@@ -181,3 +271,5 @@ def pipe(commands: list[list], *, timeout: Optional[float] = None, fatal: bool =
                 p.kill()
             except Exception:
                 pass
+        for t in threads:
+            t.join(timeout=1)
