@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ._base import ToolContext
+from ._base import ToolContext, ok_path
 
 
 def aws_s3_ls(ctx: ToolContext, bucket: str, out: Path) -> bool:
@@ -35,7 +35,7 @@ def s3scanner(ctx: ToolContext, bucket_list: Path, out: Path) -> Optional[Path]:
 def cloud_enum(ctx: ToolContext, keyword: str, out: Path) -> Optional[Path]:
     cmd = ["cloud_enum", "-k", keyword, "-l", str(out)]
     r = ctx.execute("cloud_enum", cmd, timeout=600)
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def azure_probe(ctx: ToolContext, account: str, out: Path) -> bool:
@@ -68,4 +68,4 @@ def gcs_probe(ctx: ToolContext, bucket: str, out: Path) -> bool:
 def bucketloot(ctx: ToolContext, bucket: str, out_dir: Path) -> Optional[Path]:
     cmd = ["python3", "bucketloot.py", "-b", bucket, "-o", str(out_dir)]
     r = ctx.execute("bucketloot", cmd, timeout=300)
-    return out_dir if out_dir.exists() else None
+    return ok_path(r, out_dir)

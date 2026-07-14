@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ._base import ToolContext
+from ._base import ToolContext, ok_path
 
 
 def linkfinder(ctx: ToolContext, js_file: Path, out: Path) -> Optional[Path]:
@@ -51,10 +51,14 @@ def trufflehog_git(ctx: ToolContext, target: str, out: Path) -> Optional[Path]:
 
 
 def gitleaks(ctx: ToolContext, source: Path, out: Path) -> Optional[Path]:
+    # --exit-code 0: gitleaks defaults to exit 1 when it *finds* leaks (its
+    # signal for "leaks present", not "scan failed"), which would make an
+    # r.ok check punish the tool for succeeding at its job. Pin it to 0 so
+    # the exit code reflects whether the scan actually ran.
     cmd = ["gitleaks", "detect", "--source", str(source), "--report-format", "json",
-           "--report-path", str(out)]
+           "--report-path", str(out), "--exit-code", "0"]
     r = ctx.execute("gitleaks", cmd, timeout=900)
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def github_subdomains(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
@@ -66,7 +70,7 @@ def github_subdomains(ctx: ToolContext, domain: str, out: Path) -> Optional[Path
     cmd = ["github-subdomains", "-d", domain, "-o", str(out)]
     r = ctx.execute("github-subdomains", cmd, timeout=300,
                      extra_env={"GITHUB_TOKEN": ctx.cfg.paid_key("github")})
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def gitdumper(ctx: ToolContext, url: str, out_dir: Path) -> Optional[Path]:
@@ -74,4 +78,4 @@ def gitdumper(ctx: ToolContext, url: str, out_dir: Path) -> Optional[Path]:
     # standalone wrapper binary on PATH -- not a script to invoke via python3.
     cmd = ["gitdumper", url, str(out_dir)]
     r = ctx.execute("gitdumper", cmd, timeout=300)
-    return out_dir if out_dir.exists() else None
+    return ok_path(r, out_dir)

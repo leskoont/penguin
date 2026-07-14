@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ._base import ToolContext
+from ._base import ToolContext, ok_path
 
 TEMPLATES_DIR = "config/templates"
 
@@ -23,7 +23,7 @@ def nuclei_scan(ctx: ToolContext, in_file: Path, out: Path, *,
         # official templates every run.
         cmd += ["-t", "http/cves/", "-t", "http/misconfiguration/", "-t", str(ctx.cfg.path(TEMPLATES_DIR))]
     r = ctx.execute("nuclei", cmd, timeout=3600, log_stdout=False)
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def nuclei_update(ctx: ToolContext) -> bool:

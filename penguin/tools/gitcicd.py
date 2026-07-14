@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ._base import ToolContext
+from ._base import ToolContext, ok_path
 
 
 def exposed_git_probe(ctx: ToolContext, subs_file: Path, out: Path) -> Optional[Path]:
@@ -45,6 +45,6 @@ def docker_registry_catalog(ctx: ToolContext, registry: str, out: Path) -> Optio
 def trivy_image(ctx: ToolContext, image: str, out: Path) -> Optional[Path]:
     cmd = ["trivy", "image", image, "--format", "json", "-o", str(out)]
     r = ctx.execute("trivy", cmd, timeout=600)
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 

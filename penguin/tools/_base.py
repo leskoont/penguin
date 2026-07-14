@@ -15,10 +15,21 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import Config
-from ..runner import run, is_permanent
+from ..runner import RunResult, run, is_permanent
 from ..proxies import get_pool
 
 logger = logging.getLogger("penguin.tools")
+
+
+def ok_path(r: RunResult, out: Path) -> Optional[Path]:
+    """``out.exists()`` alone can't tell a fresh result from a stale file left
+    on disk by a *prior* run of the same wrapper -- a binary that's missing,
+    times out, or hits a permanent CLI error still reports ``r.ok is False``
+    while an old ``out`` from an earlier invocation sits there untouched.
+    Require both: the current invocation must have exited cleanly *and*
+    produced the file.
+    """
+    return out if r.ok and out.exists() else None
 
 
 class ToolContext:

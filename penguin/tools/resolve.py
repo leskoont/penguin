@@ -4,14 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ._base import ToolContext
+from ._base import ToolContext, ok_path
 
 
 def dnsvalidator(ctx: ToolContext, resolvers_out: Path) -> Optional[Path]:
     cmd = ["dnsvalidator", "-tL", "https://public-dns.info/nameservers.txt",
            "-o", str(resolvers_out), "-threads", "100"]
     r = ctx.execute("dnsvalidator", cmd, timeout=300)
-    return resolvers_out if resolvers_out.exists() else None
+    return ok_path(r, resolvers_out)
 
 
 def puredns_bruteforce(ctx: ToolContext, domain: str, wordlist: Path, resolvers: Path, out: Path) -> Optional[Path]:
@@ -21,20 +21,20 @@ def puredns_bruteforce(ctx: ToolContext, domain: str, wordlist: Path, resolvers:
     # long the next time -- replaying it 3x is 60 min of dead wall-clock for a
     # result that was already final on attempt 1.
     r = ctx.execute("puredns", cmd, timeout=1200, retries=1)
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def puredns_resolve(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path) -> Optional[Path]:
     cmd = ["puredns", "resolve", "-r", str(resolvers), "-w", str(out), str(in_file)]
     r = ctx.execute("puredns", cmd, timeout=1200, retries=1)  # same as puredns_bruteforce
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def dnsx_ips(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path) -> Optional[Path]:
     """Resolve hostnames to plain A-record IPs (one per line, no host/type labels)."""
     cmd = ["dnsx", "-l", str(in_file), "-r", str(resolvers), "-a", "-resp-only", "-o", str(out)]
     r = ctx.execute("dnsx", cmd, timeout=600)
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def dnsx(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path, *, ipv6: bool = False) -> Optional[Path]:
@@ -43,7 +43,7 @@ def dnsx(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path, *, ipv6: b
         cmd += ["-aaaa"]
     cmd += ["-o", str(out)]
     r = ctx.execute("dnsx", cmd, timeout=600)
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def dnsgen(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:

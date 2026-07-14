@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ._base import ToolContext
+from ._base import ToolContext, ok_path
 
 
 def _curlcfg_escape(value: str) -> str:
@@ -88,7 +88,7 @@ def cloudflair(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
             "CENSYS_API_SECRET": ctx.cfg.paid_key("censys", "secret"),
         },
     )
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def verify_origin(ctx: ToolContext, domain: str, origin_ip: str, out: Path) -> Optional[Path]:

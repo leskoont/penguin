@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ._base import ToolContext
+from ._base import ToolContext, ok_path
 
 logger = logging.getLogger("penguin.tools.probe")
 
@@ -41,7 +41,7 @@ def httpx(ctx: ToolContext, in_file: Path, out_csv: Path, screenshots_dir: Optio
     if r.ok and ctx.proxy_applies("httpx") and _suspiciously_empty(in_file, out_csv, has_header=True):
         logger.warning("[httpx] %s targets in, ~0 results out -- retrying once with a fresh proxy", in_file)
         r = ctx.execute("httpx", cmd, timeout=900, log_stdout=False)
-    return out_csv if out_csv.exists() else None
+    return ok_path(r, out_csv)
 
 
 def httpx_simple(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
@@ -50,7 +50,7 @@ def httpx_simple(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     if r.ok and ctx.proxy_applies("httpx") and _suspiciously_empty(in_file, out):
         logger.warning("[httpx] %s targets in, ~0 results out -- retrying once with a fresh proxy", in_file)
         r = ctx.execute("httpx", cmd, timeout=600)
-    return out if out.exists() else None
+    return ok_path(r, out)
 
 
 def nuclei_tech(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
@@ -60,4 +60,4 @@ def nuclei_tech(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     # provided for scan") instead of actually fingerprinting anything.
     cmd = ["nuclei", "-l", str(in_file), "-t", "http/technologies/", "-o", str(out)]
     r = ctx.execute("nuclei", cmd, timeout=600)
-    return out if out.exists() else None
+    return ok_path(r, out)
