@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import tempfile
 from pathlib import Path
 
 from .config import Config
@@ -59,8 +60,19 @@ class WordlistManager:
         existing = self._read()
         new = {w for w in words if w not in existing}
         if new:
-            with open(self.learned_file, "a", encoding="utf-8") as fh:
-                fh.write("\n".join(sorted(new)) + "\n")
+            # Atomic write: read-dedupe-temp-rename to avoid RMW race
+            all_words = existing | new
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=self.learned_file.parent,
+                encoding="utf-8",
+                delete=False,
+                suffix=".tmp"
+            ) as tmp:
+                tmp.write("\n".join(sorted(all_words)) + "\n")
+                tmp_path = Path(tmp.name)
+            # Atomic rename on Windows and POSIX
+            tmp_path.replace(self.learned_file)
             logger.info("[wordlists] learned %d new tokens -> %s", len(new), self.learned_file)
         return len(new)
 

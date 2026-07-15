@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -109,14 +110,36 @@ class RunState:
             existing = self._read_set(acc)
             new_to_accumulator = lines - existing
             if new_to_accumulator:
-                with open(acc, "a", encoding="utf-8") as fh:
-                    fh.write("\n".join(sorted(new_to_accumulator)) + "\n")
+                # Atomic write: read-dedupe-temp-rename to avoid RMW race
+                all_lines = existing | new_to_accumulator
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    dir=acc.parent,
+                    encoding="utf-8",
+                    delete=False,
+                    suffix=".tmp"
+                ) as tmp:
+                    tmp.write("\n".join(sorted(all_lines)) + "\n")
+                    tmp_path = Path(tmp.name)
+                # Atomic rename on Windows and POSIX
+                tmp_path.replace(acc)
         run_file = self.run_dir / filename
         run_set = self._read_set(run_file)
         added = lines - run_set
-        with open(run_file, "a", encoding="utf-8") as fh:
-            if added:
-                fh.write("\n".join(sorted(added)) + "\n")
+        if added:
+            # Atomic write: read-dedupe-temp-rename to avoid RMW race
+            all_run_lines = run_set | added
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=run_file.parent,
+                encoding="utf-8",
+                delete=False,
+                suffix=".tmp"
+            ) as tmp:
+                tmp.write("\n".join(sorted(all_run_lines)) + "\n")
+                tmp_path = Path(tmp.name)
+            # Atomic rename on Windows and POSIX
+            tmp_path.replace(run_file)
         return len(new_to_accumulator) if accumulate else len(added)
 
     def read_lines(self, filename: str, *, accumulate: bool = False) -> list[str]:
