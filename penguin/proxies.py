@@ -173,8 +173,9 @@ class ProxyPool:
 
     # ---------- refresh ----------
     def refresh(self, force: bool = False, progress_cb=None) -> list[Proxy]:
-        if self._pool and not force:
-            return self._pool
+        with self._lock:
+            if self._pool and not force:
+                return self._pool
         candidates = self.acquire()
         if self.cfg.validate:
             valid = self.validate(candidates, progress_cb=progress_cb)
@@ -210,6 +211,19 @@ class ProxyPool:
                 proxy = pool[self._idx % len(pool)]
                 self._idx += 1
             return proxy.url
+
+    def mark_dead(self, proxy_url: str) -> None:
+        """Mark a proxy as dead after repeated failures and remove from rotation.
+
+        Called by tool wrappers when a proxy connection fails (e.g. CURLE_PROXY).
+        After repeated failures, the proxy is removed from the pool so subsequent
+        picks don't try the same broken proxy again.
+        """
+        with self._lock:
+            # Keep only proxies that don't match the dead proxy URL
+            self._pool = [p for p in self._pool if p.url != proxy_url]
+            if self._idx >= len(self._pool):
+                self._idx = 0
 
     def __len__(self) -> int:
         return len(self._pool)

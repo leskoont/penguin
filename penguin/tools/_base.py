@@ -4,6 +4,30 @@ Each wrapper shells out to a recon binary via ``runner.run`` and returns the
 output path / parsed data. Proxies are injected automatically when the tool
 supports them (per ``config.tools.<name>.proxy``). Missing binaries are
 skipped non-fatally.
+
+Tool timeout defaults and flags follow predictable patterns:
+
+- Timeout: Most wrappers accept a timeout kwarg passed to ToolContext.execute().
+  If unspecified, config.general.timeout is used. Passive sources (amass, subfinder,
+  crt.sh) often have higher timeouts (e.g. 60-120s) due to slow OSINT aggregators.
+  Active probes (httpx, masscan, nmap) use shorter timeouts (e.g. 30s) except where
+  the probe itself dictates a longer timeout (e.g. masscan scanning 65k ports).
+
+- Proxy support: Tools are listed in ToolContext.proxy_flag() if they support CLI
+  proxy flags. Tools NOT listed (amass v4, puredns) dropped proxy support from their
+  CLI entirely. Calling .execute() with proxy=True still picks a proxy and passes it
+  in the list for matching tools; for unsupported tools, the proxy arg is ignored.
+
+- Retries and backoff: Proxy-routed tools use the config-specified retry_attempts
+  (default 3) with exponential backoff (config.retry_backoff, default 2.0). Each
+  attempt re-picks a fresh proxy (round-robin) so failed proxies are skipped without
+  waiting. Un-proxied tools (direct public APIs) use retries=1 by default unless
+  explicitly overridden (e.g. crt.sh uses retries=3 as a transient aggregator).
+
+- Binary-missing handling: All wrappers use ok_path() to distinguish a stale output
+  file from a fresh run result. A missing binary is detected in runner.run() and
+  reported via RunResult.ok=False with no output; the wrapper returns None and the
+  caller skips the result non-fatally.
 """
 from __future__ import annotations
 

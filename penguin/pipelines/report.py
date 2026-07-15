@@ -22,9 +22,19 @@ def build_report(cfg: Config, target: dict, summary: dict) -> Path:
     target_safe = _sanitize_slug(str(target["value"]))
     reports_dir = cfg.path("reports", target_safe)
     reports_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    md = reports_dir / f"{ts}_report.md"
-    js = reports_dir / f"{ts}_report.json"
+    # Use microsecond precision to avoid timestamp collisions at 1-second resolution.
+    # Matches the pattern used in state.py RunState.__init__().
+    base_ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    md = reports_dir / f"{base_ts}_report.md"
+    js = reports_dir / f"{base_ts}_report.json"
+
+    # Collision guard: if files already exist, append a counter
+    counter = 0
+    while md.exists() or js.exists():
+        counter += 1
+        ts = f"{base_ts}_{counter}"
+        md = reports_dir / f"{ts}_report.md"
+        js = reports_dir / f"{ts}_report.json"
 
     md_text = [
         f"# penguin recon report - {target['value']}",

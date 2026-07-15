@@ -123,8 +123,10 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     # ---- directory fuzz + hidden params ----
     wl = cfg.path("wordlists/directory-list-2.3-medium.txt")
     params_wl = cfg.path("wordlists/params.txt")
+    max_hosts = cfg.general.max_hosts_per_block
+    limited_hosts = hosts[:max_hosts] if max_hosts else hosts
     if wl.exists():
-        for h in hosts[:10]:
+        for h in limited_hosts:
             safe = re.sub(r'[^a-z0-9]', '', h)
             ct.ffuf_dirs(ctx, h, wl, state.path("content") / f"ffuf_{safe}.json")
             ct.feroxbuster(ctx, h, wl, state.path("content") / f"ferox_{safe}.txt")
@@ -159,7 +161,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
             found.append(str(grpc_out))
         return found
 
-    for found in run_parallel([partial(_api_probe, i, h) for i, h in enumerate(hosts[:10])],
+    for found in run_parallel([partial(_api_probe, i, h) for i, h in enumerate(limited_hosts)],
                               max_workers=cfg.general.max_parallel_tools,
                               label="block2 api recon"):
         if found:

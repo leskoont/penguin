@@ -74,6 +74,11 @@ class GeneralConfig:
     # CPU. Kept modest by default; raise if the host/network can take it. Set
     # to 1 to force the old fully-sequential behaviour.
     max_parallel_tools: int = 8
+    # Max number of hosts to process per block (e.g. directory brute-force,
+    # API probes in block2, open DB scanning in block3). Set to None for
+    # unlimited. Keeps scanning time bounded when target has thousands of
+    # live hosts. Used as: hosts[:max_hosts_per_block].
+    max_hosts_per_block: Optional[int] = 10
 
 
 @dataclass

@@ -36,7 +36,9 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
         ip_re = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
         # resolved.txt (puredns resolve -w) holds hostnames, not IPs -- pull any
         # literal IPs directly (e.g. cidr/ip targets), then resolve the rest via dnsx
-        ips: set[str] = {h.strip() for h in hosts[:200] if ip_re.match(h.strip())}
+        max_hosts = cfg.general.max_hosts_per_block or 200  # block3 uses 200 as default for DB scan
+        limited_hosts = hosts[:max_hosts] if max_hosts else hosts
+        ips: set[str] = {h.strip() for h in limited_hosts if ip_re.match(h.strip())}
         resolved_txt = state.path(ARTIFACTS.RESOLVED)
         resolvers = cfg.path(cfg.general.resolvers_file)
         if resolved_txt.exists() and resolvers.exists():
@@ -90,7 +92,9 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
             bucket_tasks.append(partial(pfn, ctx, b, part))
     run_parallel(bucket_tasks, max_workers=cfg.general.max_parallel_tools,
                  label="block3 bucket probes")
-    merged = [p.read_text(encoding="utf-8") for p in bucket_parts if p.exists()]
+    # Only merge part files that have content; empty part-files created by parallel
+    # probes should not be included or re-create an empty buckets.txt.
+    merged = [p.read_text(encoding="utf-8") for p in bucket_parts if p.exists() and p.stat().st_size > 0]
     if merged:
         # only (re)create buckets.txt when something was actually found, matching
         # the old append-on-hit semantics the downstream `.exists()` guard relies on

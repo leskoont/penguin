@@ -22,16 +22,25 @@ class RichBlockProgress:
         self._progress = Progress(SpinnerColumn(spinner_name="line"), TextColumn("{task.description}"),
                                    TimeElapsedColumn(), console=console)
         self._task_id = None
+        self._started = False
+        self._stopped = False
 
     def __enter__(self) -> "RichBlockProgress":
         self._progress.start()
         self._task_id = self._progress.add_task("starting...", total=None)
+        self._started = True
         return self
 
     def __exit__(self, *exc) -> None:
+        self._stopped = True
         self._progress.stop()
 
     def callback(self, block_num: int, name: str, phase: str) -> None:
+        # Guard against callback invocation outside context manager scope or after __exit__.
+        # This can happen if a background task queues callbacks that fire after the
+        # context manager has already exited.
+        if not self._started or self._stopped:
+            return
         label = BLOCK_LABELS.get(block_num, name)
         style = "bold cyan" if phase == "start" else "green"
         suffix = "..." if phase == "start" else " done"
