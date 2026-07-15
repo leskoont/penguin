@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..parallel import run_parallel
+from ..pipelines.block2_web import _select_hosts
 from ..state import ARTIFACTS, RunState
 from ..tools import ports as pt
 from ..tools import cloud as cl
@@ -36,8 +37,16 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
         ip_re = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
         # resolved.txt (puredns resolve -w) holds hostnames, not IPs -- pull any
         # literal IPs directly (e.g. cidr/ip targets), then resolve the rest via dnsx
-        max_hosts = cfg.general.max_hosts_per_block or 200  # block3 uses 200 as default for DB scan
-        limited_hosts = hosts[:max_hosts] if max_hosts else hosts
+        # Block3 (open DB / cloud storage) fans out over many IPs via
+        # masscan/nmap, so it gets a larger host cap than the web/infra stages.
+        # Default 100; an explicit max_hosts_per_block other than the global
+        # default (50) overrides it.
+        _global_cap = cfg.general.max_hosts_per_block
+        max_hosts = _global_cap if _global_cap not in (None, 50) else 100
+        # Coverage-maximising host selection (group by service, one rep per
+        # group + balanced depth) instead of a raw head-slice, so coverage is
+        # preserved under the cap.
+        limited_hosts = _select_hosts(hosts, max_hosts)
         ips: set[str] = {h.strip() for h in limited_hosts if ip_re.match(h.strip())}
         resolved_txt = state.path(ARTIFACTS.RESOLVED)
         resolvers = cfg.path(cfg.general.resolvers_file)

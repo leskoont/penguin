@@ -127,14 +127,53 @@ class ToolContext:
         result = None
         for attempt in range(n):
             proxy = self.proxy_for(tool)
+            if use_proxy and proxy is None:
+                # A proxied tool must never fall back to a direct connection --
+                # that would leak the operator's real IP. The pool is
+                # empty/exhausted (e.g. every candidate got evicted as dead),
+                # so skip the call instead of running it unproxied.
+                logger.warning(
+                    "[tools] %s: proxy required but pool empty; skipping to "
+                    "avoid leaking real IP", tool,
+                )
+                return RunResult(cmd, -1, "", "no proxy available", 0, 0.0, False)
             full_cmd = list(cmd) + self.proxy_flag(tool, proxy) if proxy else list(cmd)
             result = run(full_cmd, retries=1, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env,
                          input=input, log_attempt=(attempt + 1, n))
             if result.ok or is_permanent(cmd[0], result.returncode, result.stderr):
                 return result
+            # Evict a proxy that failed outright from the rotation so the pool
+            # converges to working proxies and we stop replaying the same dead
+            # proxy on every call (issue #92). This collapses the proxy
+            # retry-storm across the whole pipeline. Conservative: only clear
+            # proxy-level failures are evicted, never generic target timeouts,
+            # so a flaky target never costs a good proxy.
+            if proxy and self._is_proxy_failure(tool, result):
+                get_pool(self.cfg).mark_dead(proxy)
             if attempt < n - 1:
-                time.sleep(backoff * (2 ** attempt))
+                time.sleep(min(backoff * (2 ** attempt), 8))
         return result
+
+    def _is_proxy_failure(self, tool: str, result: "RunResult") -> bool:
+        """Best-effort detection of a proxy-level failure (vs. a target/tool
+        failure) so dead proxies can be evicted from rotation.
+
+        Only signalled on clear proxy errors -- never on a generic timeout, so a
+        flaky target never gets a working proxy removed.
+        """
+        if tool == "curl" and result.returncode == 97:  # CURLE_PROXY
+            return True
+        low = (result.stderr or "").lower()
+        return any(s in low for s in (
+            "curle_proxy",
+            "socks server",
+            "socks5 proxy",
+            "socks4 proxy",
+            "proxy error",
+            "proxy connection",
+            "could not resolve proxy",
+            "proxy handshake",
+        ))
 
     def curl_with_secret(self, curl_args: list[str], directives: list[str], *, timeout: Optional[float] = None):
         """Run curl with credentials passed via a temp ``-K`` config file instead of

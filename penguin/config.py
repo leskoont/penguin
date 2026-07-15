@@ -25,9 +25,16 @@ class ProxyConfig:
     iplocate: str = "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks5.txt"
     validate: bool = True
     test_url: str = "http://example.com"
-    timeout: int = 5
-    # #87: 50 concurrent validation workers (I/O-bound, not CPU-bound)
-    validate_workers: int = 50
+    # #3: 5s -> 3s. Validation is pure I/O wait; a shorter per-candidate timeout
+    # drops dead proxies faster so the working pool converges sooner.
+    timeout: int = 3
+    # #87/#3: 50 -> 200 concurrent validation workers (I/O-bound, not
+    # CPU-bound). 4000 candidates at a 3s timeout across 200 workers is ~60s
+    # instead of ~7 min.
+    validate_workers: int = 200
+    # #3: reuse a previously validated pool within this many minutes instead of
+    # re-validating ~4000 candidates on every run (0 disables the cache).
+    cache_ttl_minutes: int = 60
     protocol_preference: str = "http"  # http | socks5 | any
     pool_file: str = "results/proxies/proxies_valid.txt"
     rotate: str = "roundrobin"  # roundrobin | random | fastest
@@ -64,21 +71,29 @@ class GeneralConfig:
     output_dir: str = "results"
     user_agent: str = "penguin-recon"
     wordlists_dir: str = "wordlists"
-    retry_attempts: int = 3
+    retry_attempts: int = 2
     retry_backoff: float = 2.0
     screenshots: bool = False
     # Max independent tool subprocesses to fan out concurrently at the *safe*
     # parallel points (block1 passive enum, permutation generators, block4
-    # origin discovery). These are network-bound waits on distinct output
-    # files, so overlapping them shortens wall-clock without contending for
-    # CPU. Kept modest by default; raise if the host/network can take it. Set
-    # to 1 to force the old fully-sequential behaviour.
+    # origin discovery, block2 js/api/dir-fuzz/gau, block1 dnsx resolve).
+    # These are network-bound waits on distinct output files, so overlapping
+    # them shortens wall-clock without contending for CPU. Kept modest by
+    # default; raise if the host/network can take it. Set to 1 to force the
+    # old fully-sequential behaviour.
     max_parallel_tools: int = 8
     # Max number of hosts to process per block (e.g. directory brute-force,
     # API probes in block2, open DB scanning in block3). Set to None for
     # unlimited. Keeps scanning time bounded when target has thousands of
     # live hosts. Used as: hosts[:max_hosts_per_block].
-    max_hosts_per_block: Optional[int] = 10
+    max_hosts_per_block: Optional[int] = 50
+    # Dir-fuzz wordlist knob (issue #2). Default raft-medium-directories (~30k)
+    # instead of directory-list-2.3-medium (~220k). If the chosen file is
+    # missing, block2 falls back to wordlists/directory-list-2.3-medium.txt.
+    dirfuzz_wordlist: str = "wordlists/raft-medium-directories.txt"
+    # feroxbuster is a redundant dir brute vs ffuf; keep it off by default and
+    # enable only when a second engine is explicitly wanted (issue #2).
+    dirfuzz_feroxbuster: bool = False
 
 
 @dataclass

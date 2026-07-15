@@ -155,8 +155,8 @@ def run(
             last_err = str(exc)
             logger.warning("[skip] %s", last_err)
             break
-        if attempts < total_attempts:
-            time.sleep(backoff * (2 ** (attempts - 1)))
+            if attempts < total_attempts:
+                time.sleep(min(backoff * (2 ** (attempts - 1)), 8))
     res = RunResult(cmd, -1, "", last_err, attempts, time.time() - start, False)
     if fatal:
         raise RuntimeError(f"command failed after {attempts} attempts: {' '.join(cmd)}")

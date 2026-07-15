@@ -172,10 +172,50 @@ class ProxyPool:
         return valid
 
     # ---------- refresh ----------
+    def _cache_fresh(self) -> bool:
+        """True if the persisted validated pool is still within its TTL."""
+        ttl = self.cfg.cache_ttl_minutes
+        if ttl <= 0 or not self.valid_json.exists():
+            return False
+        age = time.time() - self.valid_json.stat().st_mtime
+        return age < ttl * 60
+
+    def _load_cache(self) -> list[Proxy]:
+        import json
+
+        try:
+            data = json.loads(self.valid_json.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            logger.warning("[proxies] cache read failed; revalidating", exc_info=True)
+            return []
+        try:
+            return [Proxy(**p) for p in data]
+        except Exception:  # noqa: BLE001
+            logger.warning("[proxies] cache parse failed; revalidating", exc_info=True)
+            return []
+
     def refresh(self, force: bool = False, progress_cb=None) -> list[Proxy]:
+        # Reuse an in-memory pool (same process) without revalidating unless forced.
         with self._lock:
             if self._pool and not force:
                 return self._pool
+        # Across runs (fresh process) reuse a recent validated pool within TTL
+        # instead of re-validating ~4000 candidates every time (issue #3).
+        if not force and self._cache_fresh():
+            cached = self._load_cache()
+            if cached:
+                with self._lock:
+                    self._pool = cached
+                    self._idx = 0
+                # Extend the cache window from last *use*, not just creation,
+                # so repeated runs within TTL keep reusing instead of letting
+                # the original validation timestamp expire the pool early.
+                try:
+                    self.valid_json.touch()
+                except OSError:
+                    pass
+                logger.info("[proxies] reused cached pool: %d valid proxies (age < TTL)", len(cached))
+                return cached
         candidates = self.acquire()
         if self.cfg.validate:
             valid = self.validate(candidates, progress_cb=progress_cb)

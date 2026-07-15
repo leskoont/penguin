@@ -153,8 +153,13 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     resolved_file = state.path(ARTIFACTS.RESOLVED)
     if resolvers.exists():
         rs.puredns_resolve(ctx, all_raw, resolvers, resolved_file)
-        rs.dnsx(ctx, all_raw, resolvers, state.path("resolved_dnsx.txt"))
-        rs.dnsx(ctx, all_raw, resolvers, state.path("resolved_ipv6.txt"), ipv6=True)
+        # dnsx v4 and v6 resolve independent name sets against the same
+        # resolvers, so overlap them; puredns stays separate (resolver
+        # rate-limit would silently drop valid names if run concurrently).
+        run_parallel([
+            partial(rs.dnsx, ctx, all_raw, resolvers, state.path("resolved_dnsx.txt")),
+            partial(rs.dnsx, ctx, all_raw, resolvers, state.path("resolved_ipv6.txt"), ipv6=True),
+        ], max_workers=cfg.general.max_parallel_tools, label="block1 dnsx resolve")
     else:
         logger.warning("[block1] no resolvers file; skipping active resolution")
 

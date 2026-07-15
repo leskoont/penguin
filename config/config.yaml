@@ -10,13 +10,23 @@ general:
   output_dir: results
   user_agent: "penguin-recon"
   wordlists_dir: wordlists
-  retry_attempts: 3
+  retry_attempts: 2
   retry_backoff: 2.0
   # Concurrency for the independent, distinct-output fan-out points only
-  # (block1 passive enum, permutation generators, block4 origin discovery).
-  # Overlaps network-bound waits without CPU contention or losing results.
-  # Set to 1 for the old fully-sequential behaviour.
+  # (block1 passive enum, permutation generators, block4 origin discovery,
+  # block2 js/api/dir-fuzz/gau, block1 dnsx resolve). Overlaps network-bound
+  # waits without CPU contention or losing results. Set to 1 for the old
+  # fully-sequential behaviour.
   max_parallel_tools: 8
+  # Cap on live hosts per block (dir-fuzz, API probes, open DB scan). None = unlimited.
+  max_hosts_per_block: 50
+  # Dir-fuzz wordlist (issue #2): raft-medium-directories (~30k) by default
+  # instead of directory-list-2.3-medium (~220k). Missing file -> fallback to
+  # wordlists/directory-list-2.3-medium.txt.
+  dirfuzz_wordlist: "wordlists/raft-medium-directories.txt"
+  # feroxbuster duplicates ffuf's dir brute; off by default, flip on for a
+  # second engine (issue #2).
+  dirfuzz_feroxbuster: false
   # httpx -screenshot needs a real Chrome/Chromium binary (via go-rod) and
   # will try to auto-download one if missing, which can fail outright in
   # offline/sandboxed environments. Off by default; flip on if you want them.
@@ -68,8 +78,9 @@ proxies:
   iplocate: "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks5.txt"
   validate: true
   test_url: "http://example.com"
-  timeout: 5
-  validate_workers: 50                # concurrent validation workers (I/O-bound, not CPU-bound)
+  timeout: 3
+  validate_workers: 200                # concurrent validation workers (I/O-bound, not CPU-bound)
+  cache_ttl_minutes: 60                # reuse validated pool within TTL; 0 disables cache (issue #3)
   protocol_preference: "http"         # http | socks5 | any
   rotate: "roundrobin"                # roundrobin | random | fastest
   pool_file: "results/proxies/proxies_valid.txt"
