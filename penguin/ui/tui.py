@@ -28,7 +28,11 @@ class _LogWidgetHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = self.format(record)
-            self._app.call_from_thread(self._app.write_log, msg)
+            # Only use call_from_thread if we're not already on the app thread
+            if threading.current_thread() is self._app.app_thread:
+                self._app.write_log(msg)
+            else:
+                self._app.call_from_thread(self._app.write_log, msg)
         except Exception:
             pass
 

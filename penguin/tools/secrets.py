@@ -28,7 +28,12 @@ def secretfinder(ctx: ToolContext, js_file: Path) -> Optional[str]:
 
 
 def jsluice(ctx: ToolContext, js_glob: str, out: Path) -> Optional[Path]:
-    cmd = ["jsluice", "urls"] + js_glob.split()
+    import glob as glob_mod
+    # Expand glob pattern before passing to jsluice (shell doesn't expand when invoked programmatically)
+    expanded = glob_mod.glob(js_glob)
+    if not expanded:
+        return None
+    cmd = ["jsluice", "urls"] + expanded
     r = ctx.execute("jsluice", cmd, timeout=180)
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")

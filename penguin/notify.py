@@ -40,8 +40,19 @@ def notify(cfg: Config, message: str, *, level: str = "info", event: str = "") -
             resp = requests.post(webhook, json=payload, timeout=10)
         elif provider == "telegram":
             # webhook env expected as https://api.telegram.org/bot<token>/sendMessage?chat_id=<id>
-            payload = {"text": f"[{level.upper()}] {message}"}
-            resp = requests.post(webhook, json=payload, timeout=10)
+            # Extract chat_id from URL query parameter
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(webhook)
+            query = parse_qs(parsed.query)
+            chat_id = query.get("chat_id", [None])[0]
+            if chat_id:
+                # Remove query string and build proper Telegram payload
+                base_url = webhook.split("?")[0]
+                payload = {"chat_id": chat_id, "text": f"[{level.upper()}] {message}"}
+                resp = requests.post(base_url, json=payload, timeout=10)
+            else:
+                logger.warning("[notify] telegram: no chat_id in webhook URL")
+                return False
         else:
             logger.warning("[notify] unknown provider %s", provider)
             return False

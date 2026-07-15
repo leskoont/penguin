@@ -21,6 +21,12 @@ logger = logging.getLogger("penguin.block2")
 JS_RE = re.compile(r"https?://[^\s'\"]+\.js(\?[^\s'\"]*)?")
 
 
+def _sanitize_slug(s: str) -> str:
+    """Replace Windows-illegal filename characters with underscores."""
+    import re as re_
+    return re_.sub(r"[^a-z0-9._-]", "_", s.lower())
+
+
 def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     ctx = ToolContext(cfg)
     results: dict = {"endpoints": [], "js_secrets": [], "api": []}
@@ -55,9 +61,10 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     lines: set[str] = set()
     for h in hosts:
         dom = re.sub(r"^https?://", "", h).split("/")[0]
-        r = ct.gau(ctx, dom, js_dir / f"gau_{dom}.txt")
-        r = ct.waybackurls(ctx, dom, js_dir / f"wb_{dom}.txt")
-        ct.paramspider(ctx, dom, js_dir / f"paramspider_{dom}.txt")
+        dom_safe = _sanitize_slug(dom)
+        r = ct.gau(ctx, dom, js_dir / f"gau_{dom_safe}.txt")
+        r = ct.waybackurls(ctx, dom, js_dir / f"wb_{dom_safe}.txt")
+        ct.paramspider(ctx, dom, js_dir / f"paramspider_{dom_safe}.txt")
     # katana takes -list of all hosts in one shot, not per-host
     ct.katana(ctx, hosts_file, js_dir / "katana.txt")
     ct.hakrawler(ctx, hosts_file, js_dir / "hakrawler.txt")

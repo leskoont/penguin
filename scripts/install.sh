@@ -21,7 +21,8 @@ install_go(){
   curl -sL "https://go.dev/dl/go${VER}.linux-${ARCH}.tar.gz" -o /tmp/go.tar.gz
   sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tar.gz
   export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
-  echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> "$HOME/.bashrc"
+  # Guard bashrc append to avoid duplication on repeated runs
+  grep -q '/usr/local/go/bin' "$HOME/.bashrc" || echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> "$HOME/.bashrc"
 }
 
 # ---- Go-based tools (go install) ----
@@ -136,6 +137,13 @@ log "pip install core python deps"
 # best-effort only.
 python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
 python3 -m pip install -r requirements.txt >/dev/null 2>&1 || log "  (skipped: PEP 668 externally-managed-environment or offline)"
+
+# Ensure pipx is installed before trying to use it
+if ! command -v pipx >/dev/null 2>&1; then
+  log "pipx not found; installing via pip"
+  python3 -m pip install pipx >/dev/null 2>&1 || log "  ! pipx install failed"
+fi
+
 for m in trufflehog dnsgen arjun; do
   command -v "$m" >/dev/null 2>&1 || { log "  installing $m via pipx"; pipx install "$m" 2>/dev/null || log "  ! $m not installed"; }
 done
@@ -158,8 +166,19 @@ BIN_DIR="$HOME/.local/bin"
 mkdir -p "$TOOLS_DIR" "$BIN_DIR"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
-  *) export PATH="$BIN_DIR:$PATH"; echo "export PATH=\"$BIN_DIR:\$PATH\"" >> "$HOME/.bashrc" ;;
+  *) export PATH="$BIN_DIR:$PATH"; grep -q "$BIN_DIR" "$HOME/.bashrc" || echo "export PATH=\"$BIN_DIR:\$PATH\"" >> "$HOME/.bashrc" ;;
 esac
+# macOS: add Homebrew paths if they exist
+if [ "$(uname)" = "Darwin" ]; then
+  if [ -d "/usr/local/bin" ]; then
+    export PATH="/usr/local/bin:$PATH"
+    grep -q "/usr/local/bin" "$HOME/.bashrc" || echo 'export PATH="/usr/local/bin:$PATH"' >> "$HOME/.bashrc"
+  fi
+  if [ -d "/opt/homebrew/bin" ]; then
+    export PATH="/opt/homebrew/bin:$PATH"
+    grep -q "/opt/homebrew/bin" "$HOME/.bashrc" || echo 'export PATH="/opt/homebrew/bin:$PATH"' >> "$HOME/.bashrc"
+  fi
+fi
 
 install_py_script_tool() {
   local bin_name="$1" repo_url="$2" entry_script="$3"

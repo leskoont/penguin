@@ -24,7 +24,8 @@ def resolve_targets(
     if resolved:
         return resolved
 
-    if allow_wizard and sys.stdin.isatty():
+    stdin = sys.stdin
+    if allow_wizard and stdin is not None and stdin.isatty():
         from .wizard import wizard_target
 
         try:

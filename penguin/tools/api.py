@@ -35,12 +35,19 @@ def probe_swagger(ctx: ToolContext, base_url: str, out: Path) -> Optional[Path]:
 
 
 def graphql_introspection(ctx: ToolContext, endpoint: str, out: Path) -> Optional[Path]:
+    import json
     cmd = ["curl", "-sk", "-X", "POST", endpoint, "-H", "Content-Type: application/json",
            "-d", '{"query":"{__schema{queryType{name}mutationType{name}types{name}}}"}']
     r = ctx.execute("curl", cmd, timeout=60, retries=1)
     if r.ok:
-        out.write_text(r.stdout, encoding="utf-8")
-        return out
+        # Validate response is valid JSON with __schema (not 404/HTML)
+        try:
+            data = json.loads(r.stdout)
+            if "__schema" in data or ("data" in data and "__schema" in data.get("data", {})):
+                out.write_text(r.stdout, encoding="utf-8")
+                return out
+        except (json.JSONDecodeError, ValueError):
+            pass
     return None
 
 

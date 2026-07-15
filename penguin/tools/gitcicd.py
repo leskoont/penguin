@@ -34,11 +34,18 @@ def exposed_git_probe(ctx: ToolContext, subs_file: Path, out: Path) -> Optional[
 
 
 def docker_registry_catalog(ctx: ToolContext, registry: str, out: Path) -> Optional[Path]:
+    import json
     cmd = ["curl", "-sk", f"https://{registry}/v2/_catalog"]
     r = ctx.execute("curl", cmd, timeout=60, retries=1)
     if r.ok:
-        out.write_text(r.stdout, encoding="utf-8")
-        return out
+        # Validate response is valid JSON with expected registry fields
+        try:
+            data = json.loads(r.stdout)
+            if "repositories" in data or data:  # Valid registry responses contain repositories list or data
+                out.write_text(r.stdout, encoding="utf-8")
+                return out
+        except (json.JSONDecodeError, ValueError):
+            pass
     return None
 
 

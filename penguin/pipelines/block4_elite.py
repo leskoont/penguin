@@ -18,6 +18,11 @@ from ..tools._base import ToolContext
 logger = logging.getLogger("penguin.block4")
 
 
+def _sanitize_slug(s: str) -> str:
+    """Replace Windows-illegal filename characters with underscores."""
+    return re.sub(r"[^a-z0-9._-]", "_", s.lower())
+
+
 def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
     ctx = ToolContext(cfg)
     results: dict = {"origin_ips": [], "exposed_git": [], "secrets": []}
@@ -83,11 +88,12 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
             # dump + scan exposed .git repos for leaked secrets
             dumps_dir = state.sub("gitcicd/dumps")
             for sub in results["exposed_git"][:10]:
-                dump_dir = dumps_dir / sub.replace("/", "_")
+                sub_safe = _sanitize_slug(sub)
+                dump_dir = dumps_dir / sub_safe
                 gc_out = gc.gitdumper(ctx, f"https://{sub}/.git/", dump_dir)
                 if gc_out and gc_out.exists():
-                    th = sc.trufflehog_git(ctx, str(dump_dir), state.path("gitcicd") / f"trufflehog_{sub.replace('/', '_')}.json")
-                    gl = sc.gitleaks(ctx, dump_dir, state.path("gitcicd") / f"gitleaks_{sub.replace('/', '_')}.json")
+                    th = sc.trufflehog_git(ctx, str(dump_dir), state.path("gitcicd") / f"trufflehog_{sub_safe}.json")
+                    gl = sc.gitleaks(ctx, dump_dir, state.path("gitcicd") / f"gitleaks_{sub_safe}.json")
                     for r in (th, gl):
                         if r and r.exists():
                             results["secrets"].append(str(r))

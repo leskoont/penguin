@@ -45,6 +45,7 @@ if (-not ((Test-Path wordlists/routes-large.kite) -and ((Get-Item wordlists/rout
 }
 if (-not (Test-Path wordlists/learned.txt)) { New-Item -ItemType File -Path wordlists/learned.txt | Out-Null }
 
-Write-Host "[penguin] Windows: most recon Go binaries are cross-platform. Download per-tool releases from GitHub and add to PATH, or run under WSL with scripts/install.sh for full automation."
+Write-Host "[penguin] Windows: Go toolchain not available on Windows. Most recon tools are Go binaries; for full automation run under WSL with scripts/install.sh."
+Write-Host "[penguin] Manual setup: download per-tool releases from GitHub and add to PATH, or use WSL."
 Write-Host "[penguin] pip deps:"; python -m pip install -r requirements.txt
 Write-Host "[penguin] done. Run: python -m penguin install-check"

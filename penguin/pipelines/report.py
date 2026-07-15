@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -12,8 +13,14 @@ from ..state import RunState
 logger = logging.getLogger("penguin.report")
 
 
+def _sanitize_slug(s: str) -> str:
+    """Replace Windows-illegal filename characters with underscores."""
+    return re.sub(r"[^a-z0-9._-]", "_", s.lower())
+
+
 def build_report(cfg: Config, target: dict, summary: dict) -> Path:
-    reports_dir = cfg.path("reports", str(target["value"]))
+    target_safe = _sanitize_slug(str(target["value"]))
+    reports_dir = cfg.path("reports", target_safe)
     reports_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     md = reports_dir / f"{ts}_report.md"

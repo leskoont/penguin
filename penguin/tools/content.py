@@ -52,9 +52,9 @@ def hakrawler(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     if not hosts:
         return None
     # hakrawler dropped -plain and takes URLs via stdin only, not a
-    # positional/CLI arg -- run once over the first host, fed via stdin.
+    # positional/CLI arg -- feed entire host list, not just the first one.
     cmd = ["hakrawler", "-subs"]
-    r = ctx.execute("hakrawler", cmd, timeout=600, input=hosts[0] + "\n")
+    r = ctx.execute("hakrawler", cmd, timeout=600, input="\n".join(hosts) + "\n")
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")
         return out

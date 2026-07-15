@@ -6,6 +6,7 @@ stored in the yaml file. Every paid integration is disabled by default.
 """
 from __future__ import annotations
 
+import dataclasses
 import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -165,7 +166,13 @@ def load(config_path: str | Path | None = None) -> Config:
                 if name in cfg.paid:
                     _apply_section(cfg.paid[name], svc)
                 else:
-                    cfg.paid[name] = PaidService(**svc) if isinstance(svc, dict) else svc
+                    if isinstance(svc, dict):
+                        # Filter to only known PaidService fields to avoid crashes on unknown YAML keys
+                        known_fields = {f.name for f in dataclasses.fields(PaidService)}
+                        svc_filtered = {k: v for k, v in svc.items() if k in known_fields}
+                        cfg.paid[name] = PaidService(**svc_filtered)
+                    else:
+                        cfg.paid[name] = svc
         if "notify" in data:
             _apply_section(cfg.notify, data["notify"])
         if "continuous" in data:

@@ -26,8 +26,12 @@ def cloudflare_trace(ctx: ToolContext, url: str, out: Path) -> Optional[Path]:
     cmd = ["curl", "-sk", f"{url}/cdn-cgi/trace"]
     r = ctx.execute("curl", cmd, timeout=30)
     if r.ok:
-        out.write_text(r.stdout, encoding="utf-8")
-        return out
+        # Validate response contains actual trace data (not HTML/404 body)
+        # Valid trace has key=value lines and is not HTML
+        body = r.stdout.strip()
+        if body and not body.lower().startswith("<") and "=" in body:
+            out.write_text(r.stdout, encoding="utf-8")
+            return out
     return None
 
 
@@ -50,8 +54,11 @@ def viewdns_history(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
            "-H", "User-Agent: Mozilla/5.0"]
     r = ctx.execute("curl", cmd, timeout=60)
     if r.ok:
-        out.write_text(r.stdout, encoding="utf-8")
-        return out
+        # Validate response is not empty and not a WAF/error page (HTML check)
+        body = r.stdout.strip()
+        if body and not body.lower().startswith("<!doctype") and not body.lower().startswith("<html"):
+            out.write_text(r.stdout, encoding="utf-8")
+            return out
     return None
 
 
