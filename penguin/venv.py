@@ -116,7 +116,8 @@ def ensure_venv(argv=None) -> None:
             return
 
     if not MARKER.exists():
-        _install_deps()
+        if not _install_deps():
+            return
 
     if not TOOLS_MARKER.exists():
         _install_tools()

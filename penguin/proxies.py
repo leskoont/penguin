@@ -91,7 +91,8 @@ class ProxyPool:
                 if key not in merged:
                     merged[key] = p
                 else:
-                    merged[key].protocol = "socks5"
+                    if merged[key].protocol is None:
+                        merged[key].protocol = "socks5"
         proxies = list(merged.values())
         self.raw_file.parent.mkdir(parents=True, exist_ok=True)
         self.raw_file.write_text(
@@ -219,14 +220,15 @@ def json_dumps(obj) -> str:
     return json.dumps(obj, indent=2)
 
 
-# module-level singleton (lazily refreshed by CLI / pipelines)
-_pool: Optional[ProxyPool] = None
+# module-level cache keyed on pool_file path (lazily refreshed by CLI / pipelines)
+_pool_cache: dict[str, ProxyPool] = {}
 
 
 def get_pool(cfg: Config) -> ProxyPool:
-    global _pool
-    if _pool is None:
-        _pool = ProxyPool(cfg)
+    global _pool_cache
+    pool_file = str(cfg.path(cfg.proxies.pool_file))
+    if pool_file not in _pool_cache:
+        _pool_cache[pool_file] = ProxyPool(cfg)
         # No eager refresh here: every CLI call site refreshes explicitly
         # right after get_pool() (behind a visible progress bar via
         # ui.progress.refresh_proxy_pool). An eager refresh here used to
@@ -234,4 +236,4 @@ def get_pool(cfg: Config) -> ProxyPool:
         # first several minutes of every run showed nothing, and by the
         # time the visible progress bar appeared it was already
         # revalidating the same pool a second time.
-    return _pool
+    return _pool_cache[pool_file]

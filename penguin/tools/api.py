@@ -56,7 +56,11 @@ def kiterunner(ctx: ToolContext, in_file: Path, kite: Path, out: Path) -> Option
 
 
 def grpcurl_list(ctx: ToolContext, target: str, out: Path) -> Optional[Path]:
-    cmd = ["grpcurl", "-plaintext", target, "list"]
+    cmd = ["grpcurl"]
+    # Use -plaintext for non-443 ports; port 443 uses TLS by default
+    if not target.endswith(":443"):
+        cmd.append("-plaintext")
+    cmd.extend([target, "list"])
     r = ctx.execute("grpcurl", cmd, timeout=60)
     if r.ok:
         out.write_text(r.stdout, encoding="utf-8")

@@ -2,6 +2,7 @@
 results/**
 !results/proxies/.gitkeep
 reports/**
+tmp/**
 .venv/**
 *.tfstate
 *.tfvars

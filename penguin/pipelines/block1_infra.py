@@ -101,8 +101,9 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
 
         brute_wl = cfg.path("wordlists/subdomains-large.txt")
         if brute_wl.exists():
-            rs2.puredns_bruteforce(ctx, domains[0], brute_wl, resolvers,
-                                   sub_dir / "puredns_brute.txt")
+            for dom in domains:
+                rs2.puredns_bruteforce(ctx, dom, brute_wl, resolvers,
+                                       sub_dir / f"puredns_brute_{dom}.txt")
         else:
             # Without this guard puredns is invoked anyway and fails 3x with
             # "open .../subdomains-large.txt: no such file or directory" -- a
@@ -130,8 +131,9 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         run_parallel(gen_tasks, max_workers=cfg.general.max_parallel_tools,
                      label="block1 permutation gen")
 
-        rs2.puredns_resolve(ctx, sub_dir / "dnsgen_perms.txt", resolvers,
-                            sub_dir / "perms_resolved.txt")
+        if (sub_dir / "dnsgen_perms.txt").exists():
+            rs2.puredns_resolve(ctx, sub_dir / "dnsgen_perms.txt", resolvers,
+                                sub_dir / "perms_resolved.txt")
         if (sub_dir / "gotator_perms.txt").exists():
             rs2.puredns_resolve(ctx, sub_dir / "gotator_perms.txt", resolvers,
                                 sub_dir / "gotator_resolved.txt")
