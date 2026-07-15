@@ -63,6 +63,23 @@ class Artifacts:
 ARTIFACTS = Artifacts()
 
 
+def read_live_urls(csv_file: Path) -> list[str]:
+    """Extract URLs from httpx -csv output (first column).
+
+    Safely handles quoted fields and returns de-quoted URLs.
+    """
+    import re
+    urls = []
+    if not csv_file.exists():
+        return urls
+    url_re = re.compile(r'"??(https?://[^",]+)')
+    for line in csv_file.read_text(encoding="utf-8").splitlines():
+        m = url_re.match(line)
+        if m:
+            urls.append(m.group(1).strip('"'))
+    return urls
+
+
 class RunState:
     def __init__(self, cfg: Config, target: str):
         self.cfg = cfg

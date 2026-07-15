@@ -57,7 +57,7 @@ tools:
   x8: {proxy: false}
   masscan: {proxy: false}
   redis-cli: {proxy: false}
-  S3Scanner: {proxy: false}
+  s3scanner: {proxy: false}
   bucketloot: {proxy: false}
   trivy: {proxy: false}
   grpcurl: {proxy: false}
@@ -69,7 +69,7 @@ proxies:
   validate: true
   test_url: "http://example.com"
   timeout: 5
-  validate_workers: 200                # concurrent validation workers (I/O-bound, not CPU-bound)
+  validate_workers: 50                # concurrent validation workers (I/O-bound, not CPU-bound)
   protocol_preference: "http"         # http | socks5 | any
   rotate: "roundrobin"                # roundrobin | random | fastest
   pool_file: "results/proxies/proxies_valid.txt"

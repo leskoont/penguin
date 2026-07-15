@@ -127,6 +127,7 @@ export SHODAN_KEY=... CENSYS_ID=... CENSYS_SECRET=... SECURITYTRAILS_KEY=... CHA
 | Censys | `paid.censys` | `CENSYS_ID` / `CENSYS_SECRET` |
 | SecurityTrails | `paid.securitytrails` | `SECURITYTRAILS_KEY` |
 | Chaos (PD) | `paid.chaos` | `CHAOS_KEY` |
+| GitHub | `paid.github` | `GITHUB_TOKEN` |
 | GrayhatWarfare | `paid.grayhat` | `GRAYHAT_KEY` |
 | Netlas | `paid.netlas` | `NETLAS_KEY` |
 | FOFA | `paid.fofa` | `FOFA_KEY` |

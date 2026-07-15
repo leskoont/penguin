@@ -37,6 +37,11 @@ def resolve_targets(
             # ordinary "no targets" error path rather than crashing.
             logger.debug("wizard failed, falling back to no-targets error", exc_info=True)
             return []
-        return [t] if t else []
+        if t:
+            # #82: apply selected stages from wizard result to cfg
+            if "stages" in t:
+                cfg.stages.update(t.pop("stages"))
+            return [t]
+        return []
 
     return []

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..parallel import run_parallel
-from ..state import ARTIFACTS, RunState
+from ..state import ARTIFACTS, RunState, read_live_urls
 from ..tools import content as ct
 from ..tools import probe as pb
 from ..tools import secrets as sc
@@ -34,13 +34,8 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         logger.info("[block2] disabled by config")
         return results
 
-    interesting = state.read_lines(ARTIFACTS.LIVE_HTTPX_CSV)
-    # derive host list from csv (first column = url)
-    hosts = []
-    for line in interesting:
-        m = re.match(r'"??(https?://[^",]+)', line)
-        if m:
-            hosts.append(m.group(1).strip('"'))
+    # #83: use read_live_urls() helper instead of duplicated regex
+    hosts = read_live_urls(state.path(ARTIFACTS.LIVE_HTTPX_CSV))
     if not hosts:
         hosts = [f"https://{target['value']}"]
 
@@ -62,8 +57,9 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     for h in hosts:
         dom = re.sub(r"^https?://", "", h).split("/")[0]
         dom_safe = _sanitize_slug(dom)
-        r = ct.gau(ctx, dom, js_dir / f"gau_{dom_safe}.txt")
-        r = ct.waybackurls(ctx, dom, js_dir / f"wb_{dom_safe}.txt")
+        # #83: removed dead r= assignments on gau/waybackurls (outputs written to file, not used)
+        ct.gau(ctx, dom, js_dir / f"gau_{dom_safe}.txt")
+        ct.waybackurls(ctx, dom, js_dir / f"wb_{dom_safe}.txt")
         ct.paramspider(ctx, dom, js_dir / f"paramspider_{dom_safe}.txt")
     # katana takes -list of all hosts in one shot, not per-host
     ct.katana(ctx, hosts_file, js_dir / "katana.txt")

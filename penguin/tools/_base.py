@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -121,7 +122,9 @@ class ToolContext:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write("\n".join(directives) + "\n")
-            os.chmod(cfg_path, 0o600)
+            # #90: chmod 0o600 no-op on Windows, only call on POSIX systems
+            if not sys.platform.startswith('win'):
+                os.chmod(cfg_path, 0o600)
             cmd = ["curl", "-s", "-K", cfg_path] + curl_args
             return self.execute("curl", cmd, timeout=timeout)
         finally:

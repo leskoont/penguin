@@ -26,7 +26,8 @@ class ProxyConfig:
     validate: bool = True
     test_url: str = "http://example.com"
     timeout: int = 5
-    validate_workers: int = 200
+    # #87: 50 concurrent validation workers (I/O-bound, not CPU-bound)
+    validate_workers: int = 50
     protocol_preference: str = "http"  # http | socks5 | any
     pool_file: str = "results/proxies/proxies_valid.txt"
     rotate: str = "roundrobin"  # roundrobin | random | fastest
@@ -184,6 +185,7 @@ def load_targets(targets_file: str | Path | None = None) -> list[dict]:
     """Parse targets.txt. Each non-comment line: ``<type>:<value>`` or bare ``<value>``.
 
     type is one of: domain, asn, cidr, org, url. Default type = domain.
+    Bare URLs (starting with http://, https://, or containing ://) are auto-detected.
     """
     path = Path(targets_file) if targets_file else (ROOT / "config" / "targets.txt")
     targets: list[dict] = []
@@ -193,9 +195,16 @@ def load_targets(targets_file: str | Path | None = None) -> list[dict]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        if ":" in line and line.split(":", 1)[0] in ("domain", "asn", "cidr", "org", "url"):
-            t, v = line.split(":", 1)
-            targets.append({"type": t, "value": v.strip()})
+        # #89: Check for explicit type prefix
+        if ":" in line:
+            prefix, value = line.split(":", 1)
+            if prefix in ("domain", "asn", "cidr", "org", "url"):
+                targets.append({"type": prefix, "value": value.strip()})
+                continue
+        # #89: Auto-detect URLs (http://, https://, or any string containing ://)
+        if line.startswith(("http://", "https://")) or "://" in line:
+            targets.append({"type": "url", "value": line})
         else:
+            # Default to domain for bare values
             targets.append({"type": "domain", "value": line})
     return targets

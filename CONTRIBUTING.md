@@ -15,7 +15,7 @@
 ```bash
 git clone <this repo>
 cd penguin
-python -m penguin self-test   # bootstraps .venv, runs config/diff/proxy smoke tests
+python -m penguin self-test   # bootstraps .venv, runs config/diff/proxy smoke tests (performs live proxy fetch)
 python -m penguin install-check   # lists which recon binaries are missing locally
 ```
 

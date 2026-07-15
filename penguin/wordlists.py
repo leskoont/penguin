@@ -17,10 +17,11 @@ from .config import Config
 logger = logging.getLogger("penguin.wordlists")
 
 _NOUN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
+# #84: removed duplicate "the" entry
 _STOP = {
     "http", "https", "www", "api", "the", "and", "com", "html", "php", "json",
     "admin", "user", "users", "index", "page", "data", "src", "static", "assets",
-    "app", "main", "login", "logout", "get", "post", "the", "for", "with", "this",
+    "app", "main", "login", "logout", "get", "post", "for", "with", "this",
 }
 
 
@@ -31,6 +32,8 @@ class WordlistManager:
         self.learned_file.parent.mkdir(parents=True, exist_ok=True)
         if not self.learned_file.exists():
             self.learned_file.write_text("", encoding="utf-8")
+        # #84: cache learned words in memory to avoid O(n) re-read on every add()
+        self._learned_cache = self._read()
 
     def extract_nouns(self, text: str) -> set[str]:
         out = set()
@@ -57,11 +60,11 @@ class WordlistManager:
         return self.add(words)
 
     def add(self, words: set[str]) -> int:
-        existing = self._read()
-        new = {w for w in words if w not in existing}
+        # #84: use cached learned words instead of re-reading on every add()
+        new = {w for w in words if w not in self._learned_cache}
         if new:
             # Atomic write: read-dedupe-temp-rename to avoid RMW race
-            all_words = existing | new
+            all_words = self._learned_cache | new
             with tempfile.NamedTemporaryFile(
                 mode="w",
                 dir=self.learned_file.parent,
@@ -73,11 +76,14 @@ class WordlistManager:
                 tmp_path = Path(tmp.name)
             # Atomic rename on Windows and POSIX
             tmp_path.replace(self.learned_file)
+            # Flush cache after successful write
+            self._learned_cache = all_words
             logger.info("[wordlists] learned %d new tokens -> %s", len(new), self.learned_file)
         return len(new)
 
     def learned(self) -> list[str]:
-        return self._read()
+        # #84: return from cache instead of re-reading
+        return list(self._learned_cache)
 
     def _read(self) -> set[str]:
         if not self.learned_file.exists():

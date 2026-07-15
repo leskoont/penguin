@@ -35,7 +35,16 @@ def wizard_target(cfg: Config) -> Optional[dict]:
     selected = questionary.checkbox("Stages to run:", choices=choices).ask()
     if selected is None:
         return None
-    for name in _STAGE_LABELS:
-        cfg.stages[name] = name in selected
+    # #81: empty selection returns empty list, not None -- warn and re-prompt
+    if not selected:
+        import logging
+        logger = logging.getLogger("penguin.wizard")
+        logger.warning("no stages selected; please select at least one stage")
+        return wizard_target(cfg)  # re-prompt recursively
 
-    return {"type": target_type, "value": value}
+    # #82: return stages in result dict instead of mutating global cfg
+    return {
+        "type": target_type,
+        "value": value,
+        "stages": {name: (name in selected) for name in _STAGE_LABELS}
+    }
