@@ -16,7 +16,7 @@ from .config import Config
 
 
 def _now() -> str:
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
+    return datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
 
 class Artifacts:
@@ -66,9 +66,18 @@ class RunState:
     def __init__(self, cfg: Config, target: str):
         self.cfg = cfg
         self.target = target
-        self.run_id = _now()
+        base_ts = _now()
+        self.run_id = base_ts
         self.base = cfg.path(cfg.general.output_dir, target)
         self.run_dir = self.base / self.run_id
+
+        # Collision guard: if run_dir already exists, append a counter
+        counter = 0
+        while self.run_dir.exists():
+            counter += 1
+            self.run_id = f"{base_ts}_{counter}"
+            self.run_dir = self.base / self.run_id
+
         self.history_dir = self.base / "history"
         for d in (self.run_dir, self.history_dir):
             d.mkdir(parents=True, exist_ok=True)
@@ -90,22 +99,25 @@ class RunState:
         """Append ``lines`` to a run file, deduped against the accumulator.
 
         Returns the number of *new* lines added. Honors the guide's anew pattern.
+        When accumulate=True, returns count of lines new to the accumulator (system-wide);
+        when accumulate=False, returns count of lines new to this run.
         """
         lines = {self._norm(l) for l in lines if l and str(l).strip()}
+        new_to_accumulator = lines  # default if accumulate=False
         if accumulate:
             acc = self.base / filename
             existing = self._read_set(acc)
-            new = lines - existing
-            if new:
+            new_to_accumulator = lines - existing
+            if new_to_accumulator:
                 with open(acc, "a", encoding="utf-8") as fh:
-                    fh.write("\n".join(sorted(new)) + "\n")
+                    fh.write("\n".join(sorted(new_to_accumulator)) + "\n")
         run_file = self.run_dir / filename
         run_set = self._read_set(run_file)
         added = lines - run_set
         with open(run_file, "a", encoding="utf-8") as fh:
             if added:
                 fh.write("\n".join(sorted(added)) + "\n")
-        return len(added)
+        return len(new_to_accumulator) if accumulate else len(added)
 
     def read_lines(self, filename: str, *, accumulate: bool = False) -> list[str]:
         p = (self.base / filename) if accumulate else (self.run_dir / filename)
