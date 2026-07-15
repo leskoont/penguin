@@ -1,3 +1,6 @@
+# ignore all dot-prefixed directories
+.*/
+
 # ignore large run outputs and local secrets
 results/**
 !results/proxies/.gitkeep
