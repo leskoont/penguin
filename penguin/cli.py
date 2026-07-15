@@ -33,13 +33,18 @@ class GlobalOpts:
 
 def _parse_interval(interval: str) -> int:
     interval = interval.strip()
-    if interval.endswith("h"):
-        return int(interval[:-1]) * 3600
-    if interval.endswith("m"):
-        return int(interval[:-1]) * 60
-    if interval.endswith("d"):
-        return int(interval[:-1]) * 86400
-    return int(interval)
+    if not interval:
+        raise ValueError("interval cannot be empty")
+    try:
+        if interval.endswith("h"):
+            return int(interval[:-1]) * 3600
+        if interval.endswith("m"):
+            return int(interval[:-1]) * 60
+        if interval.endswith("d"):
+            return int(interval[:-1]) * 86400
+        return int(interval)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"invalid interval '{interval}': must be an integer or end with 'h', 'm', or 'd'") from exc
 
 
 def _merge(ctx: typer.Context, verbose: bool, config: Optional[str], targets: Optional[str]):
@@ -74,6 +79,9 @@ def cmd_run(
     ctx: typer.Context,
     target: Optional[str] = typer.Option(None, "--target", help="single domain to scan"),
     refresh_proxies: bool = typer.Option(False, "--refresh-proxies"),
+    # NOTE: -v, -c, -t duplicated on every subcommand because typer does not merge
+    # top-level @app.callback() options with subcommand options. Typer limitation:
+    # flags must appear on every command to work both before and after the subcommand name.
     verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
     config: Optional[str] = typer.Option(None, "-c", "--config", help="path to config.yaml"),
     targets: Optional[str] = typer.Option(None, "-t", "--targets", help="path to targets.txt"),
@@ -164,8 +172,11 @@ def cmd_self_test(
     st2 = RunState(cfg, "__selftest__")
     st2.add_lines("all_subdomains.txt", ["a.target.com", "b.target.com", "c.target.com"])
     diff = st2.write_diff_files("all_subdomains.txt")
-    assert "c.target.com" in diff["new"], "diff engine broken"
-    LOG.info("[selftest] diff engine OK: new=%s", diff["new"])
+    if "c.target.com" not in diff["new"]:
+        ok = False
+        LOG.error("[selftest] diff engine broken: 'c.target.com' not in new items")
+    else:
+        LOG.info("[selftest] diff engine OK: new=%s", diff["new"])
     import shutil
 
     for b in ["subfinder", "httpx", "nuclei", "puredns", "dnsx", "ffuf", "amass"]:

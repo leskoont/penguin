@@ -53,7 +53,8 @@ def venv_python() -> Path:
 
 
 def in_venv() -> bool:
-    return os.path.abspath(sys.prefix) == os.path.abspath(str(VENV))
+    # Use normcase() for case-safe comparison on Windows
+    return os.path.normcase(os.path.realpath(sys.prefix)) == os.path.normcase(os.path.realpath(str(VENV)))
 
 
 def _create_venv() -> None:

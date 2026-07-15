@@ -43,10 +43,10 @@ class CommandMissing(Exception):
     pass
 
 
-def _which(binary: str) -> Optional[str]:
+def _which(binary: str, path: Optional[str] = None) -> Optional[str]:
     from shutil import which
 
-    return which(binary)
+    return which(binary, path=path)
 
 
 # Substrings that mean "this exact command will never succeed, no matter how
@@ -66,6 +66,12 @@ _PERMANENT_ERR_SUBSTRINGS = (
     # puredns "open .../subdomains-large.txt: no such file or directory",
     # retried 3x through the full backoff for a result final on attempt 1.
     "no such file or directory",
+    # Windows equivalents for missing file/binary errors
+    "cannot find file",
+    "system cannot find",
+    "cannot find the file",
+    "cannot find the path",
+    "is not recognized as an internal or external command",
 )
 
 
@@ -106,7 +112,8 @@ def run(
     "1/1" here regardless of which real outer-loop attempt is executing.
     """
     binary = cmd[0]
-    resolved = _which(binary)
+    env_path = env.get('PATH') if env else None
+    resolved = _which(binary, path=env_path)
     if resolved is None:
         msg = f"[skip] binary not found: {binary}"
         logger.warning(msg)
@@ -117,7 +124,8 @@ def run(
     attempts = 0
     last_err = ""
     start = time.time()
-    while attempts < max(1, retries):
+    total_attempts = max(1, retries)
+    while attempts < total_attempts:
         attempts += 1
         log_a, log_n = log_attempt if log_attempt else (attempts, retries)
         try:
@@ -147,7 +155,7 @@ def run(
             last_err = str(exc)
             logger.warning("[skip] %s", last_err)
             break
-        if attempts < retries:
+        if attempts < total_attempts:
             time.sleep(backoff * (2 ** (attempts - 1)))
     res = RunResult(cmd, -1, "", last_err, attempts, time.time() - start, False)
     if fatal:
@@ -171,6 +179,7 @@ def pipe(commands: list[list], *, timeout: Optional[float] = None, fatal: bool =
     prev = None
     try:
         for i, cmd in enumerate(commands):
+            # Note: pipe() does not take a custom env param, so we use system PATH here
             if _which(cmd[0]) is None:
                 logger.warning("[skip] binary not found in pipe: %s", cmd[0])
                 if fatal:

@@ -133,6 +133,7 @@ class ProxyPool:
         # candidates at a 5s timeout took ~7 minutes (3942/50*5s =~ 394s);
         # a bigger pool cuts that roughly linearly.
         ex = concurrent.futures.ThreadPoolExecutor(max_workers=self.cfg.validate_workers)
+        futs = {}
         try:
             futs = {ex.submit(self._validate_one, p, test_url, timeout): p for p in proxies}
             pending = set(futs)

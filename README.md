@@ -68,24 +68,24 @@ package import work from any directory):
 
 ```bash
 # single target
-./penguin run --target example.com        # WSL/Linux
+./penguin.sh run --target example.com        # WSL/Linux/macOS
 pwsh ./penguin.ps1 run --target example.com   # Windows PowerShell
 penguin.bat run --target example.com          # Windows cmd
 
 # all targets from config/targets.txt
-./penguin run
+./penguin.sh run
 
 # live textual dashboard for a single target
-./penguin tui --target example.com
+./penguin.sh tui --target example.com
 
 # continuous recon (diff + notify every 6h)
-./penguin continuous --interval 6h
+./penguin.sh continuous --interval 6h
 
 # refresh proxy pool only
-./penguin proxies
+./penguin.sh proxies
 
 # validate config + diff engine + proxies
-./penguin self-test
+./penguin.sh self-test
 ```
 
 If `penguin run` is invoked with no `--target` and `config/targets.txt` is

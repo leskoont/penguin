@@ -44,6 +44,7 @@ def run_parallel(tasks: List[Callable[[], T]], *, max_workers: int,
 
     results: List[Optional[T]] = [None] * len(tasks)
     ex = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+    futs = {}
     try:
         futs = {ex.submit(_safe_call, fn, label): i for i, fn in enumerate(tasks)}
         pending = set(futs)

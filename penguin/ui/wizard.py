@@ -24,7 +24,7 @@ def wizard_target(cfg: Config) -> Optional[dict]:
     if target_type is None:
         return None
 
-    value = questionary.text(f"Target {target_type}:").ask()
+    value = (questionary.text(f"Target {target_type}:").ask() or "").strip()
     if not value:
         return None
 
@@ -38,4 +38,4 @@ def wizard_target(cfg: Config) -> Optional[dict]:
     for name in _STAGE_LABELS:
         cfg.stages[name] = name in selected
 
-    return {"type": target_type, "value": value.strip()}
+    return {"type": target_type, "value": value}
