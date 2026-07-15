@@ -13,6 +13,18 @@ def install_check_table(results: list[tuple[str, bool]]) -> Table:
     return t
 
 
+def url_check_table(results: list[tuple[str, bool, str | None]]) -> Table:
+    t = Table(title="penguin download-URL liveness check")
+    t.add_column("URL")
+    t.add_column("status")
+    for label, is_alive, error in results:
+        if is_alive:
+            t.add_row(label, "[green]OK[/]")
+        else:
+            t.add_row(label, f"[red]DEAD[/] ({error})")
+    return t
+
+
 def summary_table(target: str, summary: dict) -> Table:
     t = Table(title=f"penguin run summary - {target}")
     t.add_column("metric")

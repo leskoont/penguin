@@ -15,7 +15,7 @@ from .pipelines.master import run_target
 from .pipelines.report import build_report
 from .ui.console import console, setup_logging
 from .ui.progress import RichBlockProgress, refresh_proxy_pool
-from .ui.tables import install_check_table, summary_table
+from .ui.tables import install_check_table, summary_table, url_check_table
 from .ui.targets import resolve_targets
 
 LOG = logging.getLogger("penguin")
@@ -171,6 +171,18 @@ def cmd_self_test(
     for b in ["subfinder", "httpx", "nuclei", "puredns", "dnsx", "ffuf", "amass"]:
         present = shutil.which(b) is not None
         LOG.info("[selftest] %-12s %s", b, "present" if present else "MISSING (will skip)")
+
+    # Check download-URL liveness (issue #51)
+    from .install_check import check_critical_urls
+    LOG.info("[selftest] checking critical download-URL liveness...")
+    url_results = check_critical_urls()
+    console.print(url_check_table(url_results))
+    dead_urls = [label for label, is_alive, _ in url_results if not is_alive]
+    if dead_urls:
+        LOG.warning("[selftest] %d/%d download URLs are dead; wordlist fetches may fail", len(dead_urls), len(url_results))
+    else:
+        LOG.info("[selftest] all download URLs OK")
+
     LOG.info("[selftest] complete")
     return 0 if ok else 1
 
@@ -206,6 +218,18 @@ def cmd_install_check(
     LOG.info("[install-check] %d/%d present, %d missing", len(tools) - len(missing), len(tools), len(missing))
     if missing:
         LOG.info("[install-check] run scripts/install.sh to install missing tools")
+
+    # Check download-URL liveness (issue #51)
+    from .install_check import check_critical_urls
+    LOG.info("[install-check] checking critical download-URL liveness...")
+    url_results = check_critical_urls()
+    console.print(url_check_table(url_results))
+    dead_urls = [label for label, is_alive, _ in url_results if not is_alive]
+    if dead_urls:
+        LOG.warning("[install-check] %d/%d download URLs are dead; wordlist fetches may fail", len(dead_urls), len(url_results))
+    else:
+        LOG.info("[install-check] all download URLs OK")
+
     return 0
 
 
