@@ -25,34 +25,36 @@ install_go(){
 }
 
 # ---- Go-based tools (go install) ----
+# Pinned to known-good versions for reproducible, stable builds. Update
+# deliberately after testing breaking changes, not on every install.
 GO_TOOLS=(
-  "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-  "github.com/projectdiscovery/httpx/cmd/httpx@latest"
-  "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
-  "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
-  "github.com/d3mondev/puredns/v2@latest"
-  "github.com/projectdiscovery/katana/cmd/katana@latest"
-  "github.com/projectdiscovery/chaos-client/cmd/chaos@latest"
-  "github.com/owasp-amass/amass/v4/...@master"
-  "github.com/tomnomnom/assetfinder@latest"
-  "github.com/lc/gau@latest"
-  "github.com/tomnomnom/waybackurls@latest"
-  "github.com/lc/subjs@latest"
-  "github.com/ffuf/ffuf@latest"
-  "github.com/tomnomnom/httprobe@latest"
-  "github.com/hakluke/hakrawler@latest"
-  "github.com/fullstorydev/grpcurl/cmd/grpcurl@latest"
-  "github.com/gwen001/github-subdomains@latest"
-  "github.com/Josue87/gotator@latest"
-  "github.com/BishopFox/jsluice/cmd/jsluice@latest"
-  "github.com/redhuntlabs/bucketloot/cmd/bucketloot@latest"
-  "github.com/sa7mon/s3scanner@latest"
+  "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.6.0"
+  "github.com/projectdiscovery/httpx/cmd/httpx@v1.4.3"
+  "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.1.5"
+  "github.com/projectdiscovery/dnsx/cmd/dnsx@v1.1.6"
+  "github.com/d3mondev/puredns/v2@v2.4.2"
+  "github.com/projectdiscovery/katana/cmd/katana@v1.0.2"
+  "github.com/projectdiscovery/chaos-client/cmd/chaos@v0.4.0"
+  "github.com/owasp-amass/amass/v4/...@v4.2.1"
+  "github.com/tomnomnom/assetfinder@v0.1.1"
+  "github.com/lc/gau@v2.2.2"
+  "github.com/tomnomnom/waybackurls@v0.1.0"
+  "github.com/lc/subjs@v1.0.1"
+  "github.com/ffuf/ffuf@v2.0.8"
+  "github.com/tomnomnom/httprobe@latest"  # no stable releases
+  "github.com/hakluke/hakrawler@latest"  # no stable releases
+  "github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.8.7"
+  "github.com/gwen001/github-subdomains@latest"  # no stable releases
+  "github.com/Josue87/gotator@latest"  # no stable releases
+  "github.com/BishopFox/jsluice/cmd/jsluice@v0.5.1"
+  "github.com/redhuntlabs/bucketloot/cmd/bucketloot@v2.0"
+  "github.com/sa7mon/s3scanner@v1.0.0"
   # gitleaks' repo moved to github.com/gitleaks/gitleaks, but its go.mod still
   # DECLARES the old module path (github.com/zricethezav/gitleaks/v8); go
   # install requires the requested path to match the declared one, so the new
   # repo path fails with "module declares its path as ...". Use the declared
   # path -- GitHub redirects it to the current repo.
-  "github.com/zricethezav/gitleaks/v8@latest"
+  "github.com/zricethezav/gitleaks/v8@v8.18.1"
 )
 install_go
 export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
