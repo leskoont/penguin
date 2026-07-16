@@ -28,10 +28,26 @@ class ProxyConfig:
     # #3: 5s -> 3s. Validation is pure I/O wait; a shorter per-candidate timeout
     # drops dead proxies faster so the working pool converges sooner.
     timeout: int = 3
-    # #87/#3: 50 -> 200 concurrent validation workers (I/O-bound, not
-    # CPU-bound). 4000 candidates at a 3s timeout across 200 workers is ~60s
-    # instead of ~7 min.
-    validate_workers: int = 200
+    # Concurrent validation workers (I/O-bound). Kept at 100: worker count sets
+    # the peak SYN burst, but what actually overflows the router is the *total*
+    # attempts (each lingers ~120s in conntrack regardless of worker count), so
+    # max_candidates below is the real safety valve. 800 candidates / 100 workers
+    # at a 3s timeout is ~24s.
+    validate_workers: int = 100
+    # Cap on how many candidates to actually validate per refresh. Every attempt
+    # opens a TCP flow to the proxy IP; dead proxies (the bulk of any free list)
+    # leave that flow in SYN_SENT on the router's NAT/conntrack table for ~120s,
+    # so attempting thousands piles up lingering entries and overflows a SOHO
+    # router's table ~a minute later -- dropping the WAN link right *after*
+    # validation "completes". A random sample keeps the pool representative;
+    # keeping the net alive also stops the valid-rate collapse (a flooded link
+    # fails even good proxies mid-test). Raise for a bigger pool if the router
+    # tolerates it; 0 = unbounded (the old flooding behaviour).
+    max_candidates: int = 800
+    # Stop validating early once this many working proxies are found -- no point
+    # loading the router past what the pool needs. 0 = validate the whole
+    # (capped) candidate set.
+    target_valid: int = 150
     # #3: reuse a previously validated pool within this many minutes instead of
     # re-validating ~4000 candidates on every run (0 disables the cache).
     cache_ttl_minutes: int = 60

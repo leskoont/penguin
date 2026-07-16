@@ -95,7 +95,12 @@ proxies:
   validate: true
   test_url: "http://example.com"
   timeout: 3
-  validate_workers: 200                # concurrent validation workers (I/O-bound, not CPU-bound)
+  validate_workers: 100                # concurrent validation workers (I/O-bound); peak SYN burst
+  max_candidates: 800                  # cap total attempts: each lingers ~120s in the router's conntrack
+                                       # table, so validating thousands overflows it and drops the WAN
+                                       # link right after validation. Raise for a bigger pool if the
+                                       # router tolerates it; 0 = unbounded (old flooding behaviour).
+  target_valid: 150                    # stop validating early once this many working proxies found; 0 = off
   cache_ttl_minutes: 60                # reuse validated pool within TTL; 0 disables cache (issue #3)
   protocol_preference: "http"         # http | socks5 | any
   rotate: "roundrobin"                # roundrobin | random | fastest

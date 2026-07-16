@@ -121,10 +121,20 @@ class ProxyPool:
 
     def validate(self, proxies: list[Proxy], progress_cb=None) -> list[Proxy]:
         import concurrent.futures
+        import random
 
         valid: list[Proxy] = []
         test_url = self.cfg.test_url
         timeout = self.cfg.timeout
+        # Cap total attempts (see ProxyConfig.max_candidates): each candidate we
+        # test opens a conntrack flow to the proxy IP that lingers ~120s on the
+        # router even after we time out, so validating thousands overflows the
+        # NAT table and drops the WAN link right after validation. A random
+        # sample keeps the pool representative of the full list.
+        max_cand = getattr(self.cfg, "max_candidates", 0)
+        if max_cand and len(proxies) > max_cand:
+            proxies = random.sample(proxies, max_cand)
+        target_valid = getattr(self.cfg, "target_valid", 0)
         total = len(proxies)
         done = 0
         # Validation is pure I/O wait (each candidate blocks up to `timeout`
@@ -159,6 +169,14 @@ class ProxyPool:
                             progress_cb(done, total)
                         except Exception:  # noqa
                             pass
+                # Stop firing new connections once the pool is big enough: every
+                # further attempt only adds conntrack pressure on the router for
+                # proxies we don't need. Cancel the not-yet-started futures so
+                # they never open their sockets.
+                if target_valid and len(valid) >= target_valid:
+                    for fut in pending:
+                        fut.cancel()
+                    break
         except BaseException:
             # Drop not-yet-started work immediately so shutdown doesn't wait
             # for all ~4500 candidates; already-running requests still get
@@ -167,7 +185,10 @@ class ProxyPool:
                 fut.cancel()
             raise
         finally:
-            ex.shutdown(wait=True)
+            # cancel_futures drops anything still queued (early-stop leftovers)
+            # so we don't open sockets we no longer need; running requests still
+            # unwind within `timeout`.
+            ex.shutdown(wait=True, cancel_futures=True)
         valid.sort(key=lambda p: p.latency)
         return valid
 
