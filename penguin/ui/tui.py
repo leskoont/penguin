@@ -28,8 +28,13 @@ class _LogWidgetHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = self.format(record)
-            # Only use call_from_thread if we're not already on the app thread
-            if threading.current_thread() is self._app.app_thread:
+            # Only use call_from_thread if we're not already on the app thread.
+            # Textual's App has no public `app_thread`; it records its event-loop
+            # thread as the ident `_thread_id`. Comparing idents (not a nonexistent
+            # attribute, which would raise and drop *every* log line) routes
+            # worker-thread records through call_from_thread and app-thread
+            # records (which would deadlock call_from_thread) straight through.
+            if threading.get_ident() == getattr(self._app, "_thread_id", None):
                 self._app.write_log(msg)
             else:
                 self._app.call_from_thread(self._app.write_log, msg)

@@ -141,8 +141,12 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         # feed brute-force + permutation discoveries back into the pipeline
         # (guide's self-learning principle: every found artifact returns to
         # the pipeline instead of being a dead end)
-        for extra in (sub_dir / "puredns_brute.txt", sub_dir / "perms_resolved.txt",
-                      sub_dir / "gotator_resolved.txt"):
+        # Brute-force writes one file *per domain* (puredns_brute_<dom>.txt at
+        # line ~105), so glob them all -- a hardcoded "puredns_brute.txt" never
+        # exists and would silently drop every brute-forced subdomain.
+        extras = list(sub_dir.glob("puredns_brute_*.txt"))
+        extras += [sub_dir / "perms_resolved.txt", sub_dir / "gotator_resolved.txt"]
+        for extra in extras:
             if extra.exists():
                 raw_lines |= _extract_scoped(extra.read_text(encoding="utf-8", errors="ignore"), scope_rx)
 
