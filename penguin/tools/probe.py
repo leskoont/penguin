@@ -58,6 +58,12 @@ def nuclei_tech(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     # live against the repo) -- a bare "technologies/" matches nothing, so
     # nuclei ran with zero loaded templates every time ("no templates
     # provided for scan") instead of actually fingerprinting anything.
-    cmd = ["nuclei", "-l", str(in_file), "-t", "http/technologies/", "-o", str(out)]
+    # -rl/-c bound nuclei's request rate + template concurrency. Unbounded,
+    # nuclei's defaults (150 rps) over a large host list add to the same
+    # router conntrack pressure that drops the WAN link (see block1 DNS /
+    # block2 ffuf comments); tie the rate to the global rate_limit knob.
+    rate = ctx.cfg.general.rate_limit
+    cmd = ["nuclei", "-l", str(in_file), "-t", "http/technologies/",
+           "-rl", str(rate), "-c", "25", "-o", str(out)]
     r = ctx.execute("nuclei", cmd, timeout=600)
     return ok_path(r, out)

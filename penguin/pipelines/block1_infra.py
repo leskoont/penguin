@@ -115,25 +115,22 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         perms_in = sub_dir / "all_for_perms.txt"
         perms_in.write_text("\n".join(sorted(raw_lines)), encoding="utf-8")
 
-        # Permutation *generation* is pure local work writing distinct files, so
-        # run the generators concurrently. Their puredns *resolution* stays
+        # Permutation *generation* writes a distinct file, so it could fan out,
+        # but gotator is now the only generator. Its puredns *resolution* stays
         # strictly sequential below: two puredns runs against the same resolver
         # set would rate-limit each other and silently drop valid names.
-        # altdns was dropped from this fan-out: it's broken upstream against
-        # modern tldextract ("cannot import name 'LOG' from tldextract") so it
-        # fail-fasted every run, and it's fully redundant with gotator + dnsgen,
-        # which generate the same permutation space and actually work.
+        # altdns was dropped (broken upstream against modern tldextract) and
+        # dnsgen was removed too: its output is redundant with gotator's
+        # permutation space, so it only added wall-clock and duplicate names.
         words = cfg.path("wordlists/permutation-words.txt")
-        gen_tasks = [partial(rs2.dnsgen, ctx, perms_in, sub_dir / "dnsgen_perms.txt")]
+        gen_tasks = []
         if words.exists():
             gen_tasks.append(partial(rs2.gotator, ctx, perms_in,
                                      sub_dir / "gotator_perms.txt", words))
-        run_parallel(gen_tasks, max_workers=cfg.general.max_parallel_tools,
-                     label="block1 permutation gen")
+        if gen_tasks:
+            run_parallel(gen_tasks, max_workers=cfg.general.max_parallel_tools,
+                         label="block1 permutation gen")
 
-        if (sub_dir / "dnsgen_perms.txt").exists():
-            rs2.puredns_resolve(ctx, sub_dir / "dnsgen_perms.txt", resolvers,
-                                sub_dir / "perms_resolved.txt")
         if (sub_dir / "gotator_perms.txt").exists():
             rs2.puredns_resolve(ctx, sub_dir / "gotator_perms.txt", resolvers,
                                 sub_dir / "gotator_resolved.txt")
@@ -145,7 +142,7 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         # line ~105), so glob them all -- a hardcoded "puredns_brute.txt" never
         # exists and would silently drop every brute-forced subdomain.
         extras = list(sub_dir.glob("puredns_brute_*.txt"))
-        extras += [sub_dir / "perms_resolved.txt", sub_dir / "gotator_resolved.txt"]
+        extras += [sub_dir / "gotator_resolved.txt"]
         for extra in extras:
             if extra.exists():
                 raw_lines |= _extract_scoped(extra.read_text(encoding="utf-8", errors="ignore"), scope_rx)

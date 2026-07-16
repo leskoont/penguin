@@ -4,7 +4,20 @@
 
 general:
   threads: 50
-  rate_limit: 100
+  # HTTP request rate (aggregate; block2 splits it across the live-host fan-out).
+  # Bounded concurrency (`threads`) is what actually protects the WAN link, so
+  # this can be fairly high. TCP is heavier on conntrack than UDP -> keep it
+  # below dns_rate_limit.
+  rate_limit: 300
+  # DNS qps for puredns/dnsx (UDP flows clear fast, so DNS runs several times the
+  # HTTP rate). Unbounded massdns/dnsx opens ~10k concurrent flows and drops the
+  # WAN link; a fixed rate keeps concurrency to tens of flows. Raise for faster
+  # full coverage if the router tolerates it; lower if it still struggles.
+  dns_rate_limit: 1000
+  # Ceiling (s) for one puredns/dnsx call. The wall is scaled to wordlist size /
+  # dns_rate_limit so the whole list resolves instead of truncating at 1200s;
+  # this just caps that scaling.
+  dns_max_timeout: 5400
   timeout: 30
   resolvers_file: wordlists/resolvers.txt
   output_dir: results

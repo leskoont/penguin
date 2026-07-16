@@ -259,16 +259,31 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     params_wl = cfg.path("wordlists/params.txt")
     run_ferox = cfg.general.dirfuzz_feroxbuster
 
+    # Split the global HTTP budget across the concurrent per-host fan-out so the
+    # *aggregate* outbound socket/request volume stays under the router's
+    # NAT/conntrack ceiling. Unbounded (ffuf -t 100 -rate 300 x
+    # max_parallel_tools hosts = ~800 live sockets + thousands of TIME_WAIT/sec)
+    # this is what dropped the WAN link in block2 -- the HTTP analogue of
+    # block1's DNS flood. The per-host tools run serially within a host, so at
+    # any instant at most `fanout` of them are live; dividing the global budget
+    # by `fanout` keeps the sum at ~threads sockets and ~rate_limit rps overall.
+    fanout = max(1, min(cfg.general.max_parallel_tools, len(limited_hosts)))
+    per_host_threads = max(1, cfg.general.threads // fanout)
+    per_host_rate = max(1, cfg.general.rate_limit // fanout)
+
     def _dirfuzz_host(h: str) -> None:
         # Tools within a single host stay serial (ffuf+feroxbuster hammer the
         # same target / WAF), but different hosts overlap via run_parallel.
         safe = re.sub(r'[^a-z0-9]', '', h)
-        ct.ffuf_dirs(ctx, h, wl, state.path("content") / f"ffuf_{safe}.json")
+        ct.ffuf_dirs(ctx, h, wl, state.path("content") / f"ffuf_{safe}.json",
+                     threads=per_host_threads, rate=per_host_rate)
         # feroxbuster is a redundant dir brute by default; gate it behind a flag
         # (issue #2) so we don't pay its cost twice.
         if run_ferox:
-            ct.feroxbuster(ctx, h, wl, state.path("content") / f"ferox_{safe}.txt")
-        ct.arjun(ctx, h, state.path("content") / f"arjun_{safe}.json")
+            ct.feroxbuster(ctx, h, wl, state.path("content") / f"ferox_{safe}.txt",
+                           threads=per_host_threads, rate=per_host_rate)
+        ct.arjun(ctx, h, state.path("content") / f"arjun_{safe}.json",
+                 threads=per_host_threads)
         if params_wl.exists():
             ct.x8(ctx, h, params_wl, state.path("content") / f"x8_{safe}.json")
 

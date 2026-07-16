@@ -185,7 +185,7 @@ feature learns tokens it never reuses.
 
 - **5.1 (S) Feed `learned.txt` into brute/permutations** — in `block1_infra`,
   union `WordlistManager.learned()` into the brute wordlist and the
-  permutation-word seed before puredns/gotator/dnsgen. *Files:*
+  permutation-word seed before puredns/gotator. *Files:*
   `block1_infra.py`, `wordlists.py`.
 - **5.2 (S) Feed learned tokens into param fuzzing** — same tokens seed
   arjun/x8 param discovery in block2. *Files:* `block2_web.py`.

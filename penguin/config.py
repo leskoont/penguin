@@ -65,7 +65,29 @@ class ContinuousConfig:
 @dataclass
 class GeneralConfig:
     threads: int = 50
-    rate_limit: int = 100
+    # HTTP request rate (block2 ffuf/feroxbuster/arjun + nuclei tech-detect).
+    # This is the *aggregate* ceiling: block2 divides it across the live-host
+    # fan-out so the sum stays here. TCP is heavier on a router's conntrack than
+    # UDP (closed sockets linger in TIME_WAIT ~60s), so keep this below
+    # dns_rate_limit. What actually protects the WAN link is bounded concurrency
+    # (`threads`, also fanned out), not this number -- with keep-alive a few
+    # dozen reused connections push this rate fine. Was 100; raised for speed.
+    rate_limit: int = 300
+    # DNS query rate (qps) for puredns/dnsx -- SEPARATE from the HTTP rate above.
+    # UDP:53 flows clear from conntrack far faster than TCP, so DNS can safely
+    # run several times the HTTP rate. massdns/dnsx default to *unbounded* and
+    # open ~10k concurrent flows at once, which overruns a SOHO router's
+    # conntrack table and drops the whole WAN link mid-run -- that is the failure
+    # this caps. At a fixed rate, concurrency ~= rate * RTT (~tens of flows),
+    # nowhere near the unbounded flood. Raise it for faster full coverage if the
+    # link tolerates it; lower it if the router still struggles.
+    dns_rate_limit: int = 1000
+    # Ceiling (seconds) for a single rate-limited puredns/dnsx call. The wall is
+    # scaled to (wordlist lines / dns_rate_limit) so the *entire* list resolves
+    # instead of being silently truncated at a flat 1200s -- truncation is the
+    # single biggest silent cause of low subdomain counts. This just caps that
+    # scaling so a pathological multi-million-line list can't wedge a run.
+    dns_max_timeout: int = 5400
     timeout: int = 30
     resolvers_file: str = "wordlists/resolvers.txt"
     output_dir: str = "results"

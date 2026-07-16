@@ -214,7 +214,7 @@ def cmd_install_check(
     tools = ["subfinder", "httpx", "nuclei", "amass", "puredns", "dnsx", "ffuf",
              "feroxbuster", "katana", "gau", "waybackurls", "subjs", "arjun",
              "findomain", "masscan", "nmap", "cloud_enum", "trufflehog", "gitleaks",
-             "gitdumper", "github-subdomains", "kr", "grpcurl", "trivy", "dnsgen",
+             "gitdumper", "github-subdomains", "kr", "grpcurl", "trivy",
              "gotator", "redis-cli", "aws", "dig", "dnsvalidator",
              "hakrawler", "paramspider", "x8", "s3scanner", "bucketloot", "jsluice",
              "SecretFinder", "gcpbucketbrute"]

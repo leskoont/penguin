@@ -144,15 +144,16 @@ if ! command -v pipx >/dev/null 2>&1; then
   python3 -m pip install pipx >/dev/null 2>&1 || log "  ! pipx install failed"
 fi
 
-for m in trufflehog dnsgen arjun; do
+for m in trufflehog arjun; do
   command -v "$m" >/dev/null 2>&1 || { log "  installing $m via pipx"; pipx install "$m" 2>/dev/null || log "  ! $m not installed"; }
 done
-# altdns is intentionally NOT installed: it's abandoned (~2019), imports the
-# `imp` module removed in Python 3.12, and even when installed fails at runtime
+# altdns and dnsgen are intentionally NOT installed. altdns is abandoned
+# (~2019), imports the `imp` module removed in Python 3.12, and fails at runtime
 # with "cannot import name 'LOG' from tldextract.tldextract" against any modern
-# tldextract (upstream https://github.com/infosec-au/altdns/issues/15). penguin
-# dropped it entirely -- gotator + dnsgen cover the same permutation space and
-# work. (Its words.txt is still fetched below as the permutation wordlist.)
+# tldextract (upstream https://github.com/infosec-au/altdns/issues/15). dnsgen's
+# permutation output is redundant with gotator's, so penguin dropped both --
+# gotator alone covers the permutation space. (altdns's words.txt is still
+# fetched below as the permutation wordlist.)
 # no PyPI release, but both have proper setup.py packaging -> pipx can install straight from git
 command -v paramspider >/dev/null 2>&1 || { log "  installing paramspider via pipx (from git)"; pipx install "git+https://github.com/devanshbatham/paramspider" 2>/dev/null || log "  ! paramspider not installed"; }
 command -v dnsvalidator >/dev/null 2>&1 || { log "  installing dnsvalidator via pipx (from git)"; pipx install "git+https://github.com/vortexau/dnsvalidator" 2>/dev/null || log "  ! dnsvalidator not installed"; }

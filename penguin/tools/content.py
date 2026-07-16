@@ -62,27 +62,42 @@ def hakrawler(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
 
 
 def ffuf_dirs(ctx: ToolContext, url: str, wordlist: Path, out: Path,
-              exts: Optional[str] = None) -> Optional[Path]:
-    cmd = ["ffuf", "-u", f"{url}/FUZZ", "-w", str(wordlist), "-t", "100",
-           "-mc", "200,204,301,302,307,401,403,405", "-rate", "300", "-o", str(out)]
+              exts: Optional[str] = None, *, threads: int = 40, rate: int = 150) -> Optional[Path]:
+    # -t/-rate bound ffuf's concurrent sockets and request rate. Left at the old
+    # -t 100 -rate 300 and then multiplied by block2's per-host run_parallel
+    # fan-out (up to max_parallel_tools ffuf processes at once), the aggregate
+    # was ~800 live sockets plus thousands of short-lived TIME_WAIT entries per
+    # second -- which exhausts a home/SOHO router's NAT/conntrack table and
+    # drops the whole WAN link mid-run (the HTTP analogue of block1's DNS
+    # flood). Callers pass a per-host share of the global budget so the
+    # aggregate stays under the router's ceiling.
+    cmd = ["ffuf", "-u", f"{url}/FUZZ", "-w", str(wordlist), "-t", str(threads),
+           "-mc", "200,204,301,302,307,401,403,405", "-rate", str(rate), "-o", str(out)]
     if exts:
         cmd += ["-e", exts]
     r = ctx.execute("ffuf", cmd, timeout=1800)
     return ok_path(r, out)
 
 
-def feroxbuster(ctx: ToolContext, url: str, wordlist: Path, out: Path) -> Optional[Path]:
-    cmd = ["feroxbuster", "-u", url, "-w", str(wordlist), "-r", "-t", "30", "-o", str(out)]
+def feroxbuster(ctx: ToolContext, url: str, wordlist: Path, out: Path,
+                *, threads: int = 20, rate: int = 150) -> Optional[Path]:
+    # -t/--rate-limit bound concurrency + request rate for the same conntrack
+    # reason as ffuf_dirs (feroxbuster runs in the same per-host fan-out).
+    cmd = ["feroxbuster", "-u", url, "-w", str(wordlist), "-r", "-t", str(threads),
+           "--rate-limit", str(rate), "-o", str(out)]
     r = ctx.execute("feroxbuster", cmd, timeout=1800)
     return ok_path(r, out)
 
 
-def arjun(ctx: ToolContext, url: str, out: Path, method: str = "GET") -> Optional[Path]:
+def arjun(ctx: ToolContext, url: str, out: Path, method: str = "GET",
+          *, threads: int = 10) -> Optional[Path]:
     # --stable forces threads=1 plus a random 6-12s delay between every
     # request -- against a large param wordlist that alone burns the whole
     # 600s timeout x3 retries. Drop it and use arjun's real threads/timeout
-    # flags (-t default 5, -T per-request timeout default 15s) instead.
-    cmd = ["arjun", "-u", url, "-m", method, "-t", "10", "-T", "10", "-o", str(out)]
+    # flags (-t default 5, -T per-request timeout default 15s) instead. -t is a
+    # caller-supplied share of the global budget so the per-host fan-out doesn't
+    # add up to a conntrack-exhausting connection flood (see ffuf_dirs).
+    cmd = ["arjun", "-u", url, "-m", method, "-t", str(threads), "-T", "10", "-o", str(out)]
     r = ctx.execute("arjun", cmd, timeout=300)
     return ok_path(r, out)
 
