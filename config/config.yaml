@@ -3,17 +3,26 @@
 # Every paid integration is DISABLED by default.
 
 general:
-  threads: 50
+  # SLIRP-SAFE PROFILE. The link drops came from VirtualBox's user-mode NAT
+  # (SLIRP, gateway 10.0.2.2 / guest 10.0.2.15), NOT the physical router or the
+  # proxy pool: a recon connection burst overruns SLIRP's tiny socket table and
+  # takes the whole VM offline (proven: `From 10.0.2.15 ... Destination Host
+  # Unreachable` mid-run). Bridged mode would skip SLIRP but is impossible on a
+  # Wi-Fi / TUN-proxy host, so the four knobs below bound concurrency under
+  # SLIRP's ceiling. Raise them back toward 50/300/1000/8 only off SLIRP
+  # (wired bridge, VMware NAT, WSL2, or a VPS).
+  threads: 15
   # HTTP request rate (aggregate; block2 splits it across the live-host fan-out).
-  # Bounded concurrency (`threads`) is what actually protects the WAN link, so
-  # this can be fairly high. TCP is heavier on conntrack than UDP -> keep it
-  # below dns_rate_limit.
-  rate_limit: 300
-  # DNS qps for puredns/dnsx (UDP flows clear fast, so DNS runs several times the
-  # HTTP rate). Unbounded massdns/dnsx opens ~10k concurrent flows and drops the
-  # WAN link; a fixed rate keeps concurrency to tens of flows. Raise for faster
-  # full coverage if the router tolerates it; lower if it still struggles.
-  dns_rate_limit: 1000
+  # TCP is heavier on SLIRP than UDP (sockets linger) -> keep it at/below
+  # dns_rate_limit. 100 keeps concurrent TCP flows well under what collapsed
+  # the SLIRP socket table.
+  rate_limit: 100
+  # DNS qps for puredns/dnsx. Unbounded massdns/dnsx opens ~10k concurrent UDP
+  # flows that SLIRP cannot forward -> whole-VM link drop. ~150 keeps DNS
+  # concurrency to tens of flows (rate*RTT), which SLIRP survives; a 100k-word
+  # brute then takes ~11 min but full coverage is preserved by the size-scaled
+  # timeout below. Raise well past this only off SLIRP.
+  dns_rate_limit: 150
   # Ceiling (s) for one puredns/dnsx call. The wall is scaled to wordlist size /
   # dns_rate_limit so the whole list resolves instead of truncating at 1200s;
   # this just caps that scaling.
@@ -28,9 +37,11 @@ general:
   # Concurrency for the independent, distinct-output fan-out points only
   # (block1 passive enum, permutation generators, block4 origin discovery,
   # block2 js/api/dir-fuzz/gau, block1 dnsx resolve). Overlaps network-bound
-  # waits without CPU contention or losing results. Set to 1 for the old
-  # fully-sequential behaviour.
-  max_parallel_tools: 8
+  # waits without CPU contention or losing results. Dominant SLIRP knob: 8
+  # sources each opening a connection burst is what peaks the socket count past
+  # SLIRP's table and drops the VM link, so 3 here. Set to 1 for fully
+  # sequential; raise only off SLIRP.
+  max_parallel_tools: 3
   # Cap on live hosts per block (dir-fuzz, API probes, open DB scan). None = unlimited.
   max_hosts_per_block: 50
   # Dedicated cap for block3 (open-DB/cloud masscan/nmap); own knob so an
@@ -56,8 +67,13 @@ stages:
 
 # per-tool settings; set proxy:false to exclude a tool from proxy routing
 tools:
-  subfinder: {proxy: true, threads: 50}
-  httpx: {proxy: true, threads: 50}
+  # subfinder proxy:false -- routing all 30+ passive sources through one free
+  # SOCKS proxy is what crashed it (digitorus goroutine panic / 300s hangs) and
+  # it queries aggregators, not the target, so direct is both safer and works.
+  # The host already egresses through its TUN system proxy, so this doesn't
+  # expose the operator IP any more than the un-proxied crt.sh/findomain do.
+  subfinder: {proxy: false, threads: 15}
+  httpx: {proxy: true, threads: 15}
   puredns: {proxy: true}
   dnsx: {proxy: true}
   amass: {proxy: true}
@@ -95,7 +111,9 @@ proxies:
   validate: true
   test_url: "http://example.com"
   timeout: 3
-  validate_workers: 100                # concurrent validation workers (I/O-bound); peak SYN burst
+  validate_workers: 40                 # concurrent validation workers; sets the peak simultaneous-socket
+                                       # burst, which SLIRP's small NAT table cannot absorb at 100. 40 stays
+                                       # under SLIRP's ceiling; total volume is gated by max_candidates.
   max_candidates: 800                  # cap total attempts: each lingers ~120s in the router's conntrack
                                        # table, so validating thousands overflows it and drops the WAN
                                        # link right after validation. Raise for a bigger pool if the

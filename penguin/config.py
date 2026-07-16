@@ -28,12 +28,12 @@ class ProxyConfig:
     # #3: 5s -> 3s. Validation is pure I/O wait; a shorter per-candidate timeout
     # drops dead proxies faster so the working pool converges sooner.
     timeout: int = 3
-    # Concurrent validation workers (I/O-bound). Kept at 100: worker count sets
-    # the peak SYN burst, but what actually overflows the router is the *total*
-    # attempts (each lingers ~120s in conntrack regardless of worker count), so
-    # max_candidates below is the real safety valve. 800 candidates / 100 workers
-    # at a 3s timeout is ~24s.
-    validate_workers: int = 100
+    # Concurrent validation workers (I/O-bound). Worker count sets the peak
+    # simultaneous-socket burst, which is exactly what SLIRP's small NAT table
+    # cannot absorb -- 100 parallel proxy SYNs at startup is a link-drop risk on
+    # a VirtualBox NAT VM. 40 keeps the burst under SLIRP's ceiling; the run is
+    # gated on max_candidates for total volume anyway. Raise off SLIRP.
+    validate_workers: int = 40
     # Cap on how many candidates to actually validate per refresh. Every attempt
     # opens a TCP flow to the proxy IP; dead proxies (the bulk of any free list)
     # leave that flow in SYN_SENT on the router's NAT/conntrack table for ~120s,
@@ -80,24 +80,29 @@ class ContinuousConfig:
 
 @dataclass
 class GeneralConfig:
-    threads: int = 50
+    # SLIRP-SAFE PROFILE. The real bottleneck turned out to be VirtualBox's
+    # user-mode NAT (SLIRP, the 10.0.2.15 gateway): it keeps a tiny concurrent
+    # socket table and collapses the *whole* VM link when a recon burst exceeds
+    # it (proven: `From 10.0.2.15 ... Destination Host Unreachable` mid-run).
+    # Bridged mode would bypass SLIRP but is impossible on a Wi-Fi / TUN-proxy
+    # host, so the fix is to bound total concurrency under SLIRP's ceiling. All
+    # four knobs below are the safety valve; raise them only off SLIRP (wired
+    # bridge / VMware NAT / WSL2 / VPS), where the old 50/300/1000/8 are fine.
+    threads: int = 15
     # HTTP request rate (block2 ffuf/feroxbuster/arjun + nuclei tech-detect).
-    # This is the *aggregate* ceiling: block2 divides it across the live-host
-    # fan-out so the sum stays here. TCP is heavier on a router's conntrack than
-    # UDP (closed sockets linger in TIME_WAIT ~60s), so keep this below
-    # dns_rate_limit. What actually protects the WAN link is bounded concurrency
-    # (`threads`, also fanned out), not this number -- with keep-alive a few
-    # dozen reused connections push this rate fine. Was 100; raised for speed.
-    rate_limit: int = 300
+    # Aggregate ceiling: block2 divides it across the live-host fan-out so the
+    # sum stays here. TCP is heavier on SLIRP than UDP (sockets linger), so keep
+    # this at/below dns_rate_limit. 100 keeps concurrent TCP flows well under
+    # what collapsed the SLIRP socket table.
+    rate_limit: int = 100
     # DNS query rate (qps) for puredns/dnsx -- SEPARATE from the HTTP rate above.
-    # UDP:53 flows clear from conntrack far faster than TCP, so DNS can safely
-    # run several times the HTTP rate. massdns/dnsx default to *unbounded* and
-    # open ~10k concurrent flows at once, which overruns a SOHO router's
-    # conntrack table and drops the whole WAN link mid-run -- that is the failure
-    # this caps. At a fixed rate, concurrency ~= rate * RTT (~tens of flows),
-    # nowhere near the unbounded flood. Raise it for faster full coverage if the
-    # link tolerates it; lower it if the router still struggles.
-    dns_rate_limit: int = 1000
+    # massdns/dnsx default to *unbounded* and open ~10k concurrent UDP:53 flows,
+    # which SLIRP cannot forward -- it drops the whole VM link. Even a moderate
+    # rate matters here: at ~150 qps concurrency stays ~= rate*RTT (tens of
+    # flows), which SLIRP survives. This slows DNS brute (a 100k list ~= 11 min)
+    # but preserves full coverage via the size-scaled timeout below. Raise well
+    # past this only off SLIRP.
+    dns_rate_limit: int = 150
     # Ceiling (seconds) for a single rate-limited puredns/dnsx call. The wall is
     # scaled to (wordlist lines / dns_rate_limit) so the *entire* list resolves
     # instead of being silently truncated at a flat 1200s -- truncation is the
@@ -116,10 +121,13 @@ class GeneralConfig:
     # parallel points (block1 passive enum, permutation generators, block4
     # origin discovery, block2 js/api/dir-fuzz/gau, block1 dnsx resolve).
     # These are network-bound waits on distinct output files, so overlapping
-    # them shortens wall-clock without contending for CPU. Kept modest by
-    # default; raise if the host/network can take it. Set to 1 to force the
-    # old fully-sequential behaviour.
-    max_parallel_tools: int = 8
+    # them shortens wall-clock without contending for CPU. On SLIRP this is the
+    # dominant knob: 8 sources each opening their own connection burst is what
+    # peaks the concurrent-socket count past SLIRP's table and drops the VM
+    # link. 3 keeps the passive fan-out from opening everything at once; raise
+    # only off SLIRP (bridge / VMware NAT / WSL2 / VPS). Set to 1 for fully
+    # sequential.
+    max_parallel_tools: int = 3
     # Max number of hosts to process per block (e.g. directory brute-force,
     # API probes in block2, open DB scanning in block3). Set to None for
     # unlimited. Keeps scanning time bounded when target has thousands of
