@@ -20,6 +20,9 @@ general:
   max_parallel_tools: 8
   # Cap on live hosts per block (dir-fuzz, API probes, open DB scan). None = unlimited.
   max_hosts_per_block: 50
+  # Dedicated cap for block3 (open-DB/cloud masscan/nmap); own knob so an
+  # explicit max_hosts_per_block is never silently overridden. None = unlimited.
+  max_hosts_block3: 100
   # Dir-fuzz wordlist (issue #2): raft-medium-directories (~30k) by default
   # instead of directory-list-2.3-medium (~220k). Missing file -> fallback to
   # wordlists/directory-list-2.3-medium.txt.

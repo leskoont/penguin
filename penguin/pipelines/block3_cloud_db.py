@@ -38,11 +38,11 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
         # resolved.txt (puredns resolve -w) holds hostnames, not IPs -- pull any
         # literal IPs directly (e.g. cidr/ip targets), then resolve the rest via dnsx
         # Block3 (open DB / cloud storage) fans out over many IPs via
-        # masscan/nmap, so it gets a larger host cap than the web/infra stages.
-        # Default 100; an explicit max_hosts_per_block other than the global
-        # default (50) overrides it.
-        _global_cap = cfg.general.max_hosts_per_block
-        max_hosts = _global_cap if _global_cap not in (None, 50) else 100
+        # masscan/nmap, so it has its own dedicated cap (default 100) rather
+        # than reusing the web/infra max_hosts_per_block -- that way an explicit
+        # max_hosts_per_block value is never silently overridden here. None =
+        # unlimited.
+        max_hosts = cfg.general.max_hosts_block3
         # Coverage-maximising host selection (group by service, one rep per
         # group + balanced depth) instead of a raw head-slice, so coverage is
         # preserved under the cap.

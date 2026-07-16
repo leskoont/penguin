@@ -15,7 +15,14 @@ def dnsvalidator(ctx: ToolContext, resolvers_out: Path) -> Optional[Path]:
 
 
 def puredns_bruteforce(ctx: ToolContext, domain: str, wordlist: Path, resolvers: Path, out: Path) -> Optional[Path]:
-    cmd = ["puredns", "bruteforce", str(wordlist), domain, "-r", str(resolvers), "-w", str(out)]
+    # --rate-limit / --rate-limit-trusted are REQUIRED here: puredns defaults to
+    # 0 (unlimited), so massdns underneath keeps thousands of concurrent UDP:53
+    # flows open at once. From behind a consumer/SOHO router that exhausts the
+    # NAT/conntrack table and drops the whole WAN link mid-run. Bound both to
+    # the configured qps so query volume stays under the router's flow ceiling.
+    rate = ctx.cfg.general.rate_limit
+    cmd = ["puredns", "bruteforce", str(wordlist), domain, "-r", str(resolvers),
+           "--rate-limit", str(rate), "--rate-limit-trusted", str(rate), "-w", str(out)]
     # retries=1: puredns doesn't use the proxy pool, and a 1200s timeout that
     # already ran to the wall means the same wordlist+resolvers will run just as
     # long the next time -- replaying it 3x is 60 min of dead wall-clock for a
@@ -25,20 +32,38 @@ def puredns_bruteforce(ctx: ToolContext, domain: str, wordlist: Path, resolvers:
 
 
 def puredns_resolve(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path) -> Optional[Path]:
-    cmd = ["puredns", "resolve", "-r", str(resolvers), "-w", str(out), str(in_file)]
+    # Rate-limit for the same reason as puredns_bruteforce (unlimited default
+    # floods the link). See that function's comment.
+    rate = ctx.cfg.general.rate_limit
+    cmd = ["puredns", "resolve", "-r", str(resolvers),
+           "--rate-limit", str(rate), "--rate-limit-trusted", str(rate),
+           "-w", str(out), str(in_file)]
     r = ctx.execute("puredns", cmd, timeout=1200, retries=1)  # same as puredns_bruteforce
     return ok_path(r, out)
 
 
 def dnsx_ips(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path) -> Optional[Path]:
     """Resolve hostnames to plain A-record IPs (one per line, no host/type labels)."""
-    cmd = ["dnsx", "-l", str(in_file), "-r", str(resolvers), "-a", "-resp-only", "-o", str(out)]
+    # -rl/-t: dnsx defaults to unlimited rate + 100 threads; bound both so the
+    # direct DNS query volume stays under the router's conntrack/NAT ceiling
+    # (see dnsx()/puredns_bruteforce comments -- this is what dropped the link).
+    rate = ctx.cfg.general.rate_limit
+    threads = ctx.cfg.general.threads
+    cmd = ["dnsx", "-l", str(in_file), "-r", str(resolvers), "-a", "-resp-only",
+           "-rl", str(rate), "-t", str(threads), "-o", str(out)]
     r = ctx.execute("dnsx", cmd, timeout=600)
     return ok_path(r, out)
 
 
 def dnsx(ctx: ToolContext, in_file: Path, resolvers: Path, out: Path, *, ipv6: bool = False) -> Optional[Path]:
-    cmd = ["dnsx", "-l", str(in_file), "-r", str(resolvers), "-a", "-resp", "-cname", "-mx", "-ns", "-txt"]
+    # -rl/-t bound dnsx's direct query volume: it defaults to unlimited rate and
+    # ~100 threads, and here each name triggers 5-6 record-type lookups
+    # (A/AAAA/CNAME/MX/NS/TXT) -- unbounded, that packet flood exhausts a home
+    # router's conntrack/NAT table and drops the WAN link. Tie both to config.
+    rate = ctx.cfg.general.rate_limit
+    threads = ctx.cfg.general.threads
+    cmd = ["dnsx", "-l", str(in_file), "-r", str(resolvers), "-a", "-resp", "-cname", "-mx", "-ns", "-txt",
+           "-rl", str(rate), "-t", str(threads)]
     if ipv6:
         cmd += ["-aaaa"]
     cmd += ["-o", str(out)]

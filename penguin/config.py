@@ -87,6 +87,10 @@ class GeneralConfig:
     # unlimited. Keeps scanning time bounded when target has thousands of
     # live hosts. Used as: hosts[:max_hosts_per_block].
     max_hosts_per_block: Optional[int] = 50
+    # Block3 (open-DB/cloud) fans out over many IPs via masscan/nmap and gets a
+    # larger cap than the web/infra stages. Its own knob so an explicit
+    # max_hosts_per_block value is never silently overridden. None = unlimited.
+    max_hosts_block3: Optional[int] = 100
     # Dir-fuzz wordlist knob (issue #2). Default raft-medium-directories (~30k)
     # instead of directory-list-2.3-medium (~220k). If the chosen file is
     # missing, block2 falls back to wordlists/directory-list-2.3-medium.txt.

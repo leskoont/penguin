@@ -268,7 +268,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         # (issue #2) so we don't pay its cost twice.
         if run_ferox:
             ct.feroxbuster(ctx, h, wl, state.path("content") / f"ferox_{safe}.txt")
-        ct.arjun(ctx, h, wl, state.path("content") / f"arjun_{safe}.json")
+        ct.arjun(ctx, h, state.path("content") / f"arjun_{safe}.json")
         if params_wl.exists():
             ct.x8(ctx, h, params_wl, state.path("content") / f"x8_{safe}.json")
 
