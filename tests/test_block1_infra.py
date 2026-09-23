@@ -1,8 +1,9 @@
 """Tests for penguin.pipelines.block1_infra - scope regex and extraction."""
 import re
+
 import pytest
 
-from penguin.pipelines.block1_infra import _scope_regex, _extract_scoped
+from penguin.pipelines.block1_infra import _extract_scoped, _scope_regex
 
 
 class TestScopeRegex:

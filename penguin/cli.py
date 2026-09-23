@@ -10,9 +10,9 @@ from typing import Optional
 import typer
 
 from .config import load, load_targets
-from .proxies import get_pool
 from .pipelines.master import run_target
 from .pipelines.report import build_report
+from .proxies import get_pool
 from .ui.console import console, setup_logging
 from .ui.progress import RichBlockProgress, refresh_proxy_pool
 from .ui.tables import install_check_table, summary_table, url_check_table
@@ -229,7 +229,7 @@ def cmd_install_check(
     reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
 ) -> int:
     cfg_path, _ = _merge(ctx, verbose, config, targets)
-    cfg = load(cfg_path)
+    load(cfg_path)  # validate the config parses even though presence is PATH-only
     import shutil
 
     tools = ["subfinder", "httpx", "nuclei", "amass", "puredns", "dnsx", "ffuf",

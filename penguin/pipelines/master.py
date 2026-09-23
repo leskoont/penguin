@@ -6,13 +6,12 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from pathlib import Path
 from typing import Callable, Optional
 
 from ..config import Config
+from ..notify import notify
 from ..state import ARTIFACTS, RunState
 from ..wordlists import WordlistManager
-from ..notify import notify
 from .block1_infra import run_block1
 from .block2_web import run_block2
 from .block3_cloud_db import run_block3

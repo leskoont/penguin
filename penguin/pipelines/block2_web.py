@@ -5,15 +5,16 @@ import logging
 import re
 from functools import partial
 from pathlib import Path
+from typing import Optional
 
 from ..config import Config
 from ..parallel import run_parallel
 from ..state import ARTIFACTS, RunState, read_live_urls
+from ..tools import api as ap
 from ..tools import content as ct
+from ..tools import nuclei_custom as nu
 from ..tools import probe as pb
 from ..tools import secrets as sc
-from ..tools import api as ap
-from ..tools import nuclei_custom as nu
 from ..tools._base import ToolContext
 
 logger = logging.getLogger("penguin.block2")

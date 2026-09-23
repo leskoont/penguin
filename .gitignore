@@ -1,5 +1,7 @@
-# ignore all dot-prefixed directories
+# ignore all dot-prefixed directories ...
 .*/
+# ... except the ones we intentionally track (CI, etc.)
+!.github/
 
 # ignore large run outputs and local secrets
 results/**
@@ -15,6 +17,9 @@ tmp/**
 __pycache__/
 *.pyc
 .pytest_cache/
+*.egg-info/
+build/
+dist/
 
 # editor / OS
 .vscode/

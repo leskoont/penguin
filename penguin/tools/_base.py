@@ -40,8 +40,8 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import Config
-from ..runner import RunResult, run, is_permanent
 from ..proxies import get_pool
+from ..runner import RunResult, is_permanent, run
 
 logger = logging.getLogger("penguin.tools")
 

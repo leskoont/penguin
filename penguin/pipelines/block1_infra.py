@@ -8,14 +8,13 @@ from __future__ import annotations
 import logging
 import re
 from functools import partial
-from pathlib import Path
 
 from ..config import Config
 from ..parallel import run_parallel
 from ..state import ARTIFACTS, RunState
-from ..tools import subdomain as sd
-from ..tools import resolve as rs
 from ..tools import probe as pb
+from ..tools import resolve as rs
+from ..tools import subdomain as sd
 from ..tools._base import ToolContext
 
 logger = logging.getLogger("penguin.block1")

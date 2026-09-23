@@ -4,15 +4,14 @@ from __future__ import annotations
 import logging
 import re
 from functools import partial
-from pathlib import Path
 
 from ..config import Config
 from ..parallel import run_parallel
 from ..state import ARTIFACTS, RunState
-from ..tools import origin as og
 from ..tools import gitcicd as gc
-from ..tools import secrets as sc
 from ..tools import nuclei_custom as nu
+from ..tools import origin as og
+from ..tools import secrets as sc
 from ..tools._base import ToolContext
 
 logger = logging.getLogger("penguin.block4")
