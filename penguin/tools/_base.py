@@ -31,10 +31,12 @@ Tool timeout defaults and flags follow predictable patterns:
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -44,6 +46,29 @@ from ..proxies import get_pool
 from ..runner import RunResult, is_permanent, run
 
 logger = logging.getLogger("penguin.tools")
+
+# Basename of the per-run tool-outcome ledger (one JSON object per line). Written
+# under a run dir when a ToolContext is given one, so a run's tool behaviour is
+# machine-readable after the fact instead of buried in the live log stream.
+LEDGER_NAME = "_tool_ledger.jsonl"
+
+
+def classify_outcome(result: RunResult) -> str:
+    """Map a RunResult to a coarse outcome label for the ledger/diagnostics."""
+    if result.ok:
+        return "ok"
+    err = (result.stderr or "")
+    low = err.lower()
+    if err == "no proxy available":
+        return "skipped_no_proxy"
+    if "timeout" in low or "timed out" in low:
+        return "timeout"
+    binary = result.cmd[0] if result.cmd else ""
+    if result.returncode == -1 and ("not found" in low or "missing binary" in low):
+        return "missing"
+    if is_permanent(binary, result.returncode, result.stderr):
+        return "permanent"
+    return "error"
 
 
 def ok_path(r: RunResult, out: Path) -> Optional[Path]:
@@ -58,8 +83,35 @@ def ok_path(r: RunResult, out: Path) -> Optional[Path]:
 
 
 class ToolContext:
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, run_dir: Optional[Path] = None):
         self.cfg = cfg
+        # When set, every execute() appends one outcome record to
+        # <run_dir>/_tool_ledger.jsonl. Optional so standalone tool calls
+        # (self-test, proxy refresh) keep working with no ledger.
+        self.run_dir = Path(run_dir) if run_dir else None
+        self._ledger_lock = threading.Lock()
+
+    def _ledger(self, tool: str, result: RunResult) -> None:
+        if self.run_dir is None:
+            return
+        rec = {
+            "ts": time.time(),
+            "tool": tool,
+            "binary": result.cmd[0] if result.cmd else tool,
+            "returncode": result.returncode,
+            "attempts": result.attempts,
+            "duration": round(result.duration, 3),
+            "ok": result.ok,
+            "outcome": classify_outcome(result),
+            "stdout_bytes": len(result.stdout or ""),
+        }
+        try:
+            line = json.dumps(rec, ensure_ascii=False) + "\n"
+            with self._ledger_lock:
+                with open(self.run_dir / LEDGER_NAME, "a", encoding="utf-8") as fh:
+                    fh.write(line)
+        except Exception:  # noqa - telemetry must never break a recon run
+            logger.debug("[ledger] failed to record %s", tool, exc_info=True)
 
     def proxy_applies(self, tool: str) -> bool:
         return self.cfg.proxies.enabled and bool(self.cfg.tool_setting(tool, "proxy", True))
@@ -93,6 +145,17 @@ class ToolContext:
     def execute(self, tool: str, cmd: list, *, timeout: Optional[float] = None, log_stdout: bool = False,
                 extra_env: Optional[dict] = None, retries: Optional[int] = None, input: Optional[str] = None,
                 proxy: Optional[bool] = None):
+        """Run a tool and, when this context has a run_dir, append one outcome
+        record to the per-run ledger. The heavy lifting is in _execute_impl;
+        this wrapper only adds telemetry so every return path is covered once."""
+        result = self._execute_impl(tool, cmd, timeout=timeout, log_stdout=log_stdout,
+                                    extra_env=extra_env, retries=retries, input=input, proxy=proxy)
+        self._ledger(tool, result)
+        return result
+
+    def _execute_impl(self, tool: str, cmd: list, *, timeout: Optional[float] = None, log_stdout: bool = False,
+                      extra_env: Optional[dict] = None, retries: Optional[int] = None, input: Optional[str] = None,
+                      proxy: Optional[bool] = None):
         to = timeout or self.cfg.general.timeout
         env = {**os.environ, **extra_env} if extra_env else None
         backoff = self.cfg.general.retry_backoff

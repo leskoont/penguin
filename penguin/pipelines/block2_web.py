@@ -126,7 +126,7 @@ def _select_hosts(hosts: list[str], max_hosts: Optional[int]) -> list[str]:
 
 
 def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
-    ctx = ToolContext(cfg)
+    ctx = ToolContext(cfg, run_dir=state.run_dir)
     results: dict = {"endpoints": [], "js_secrets": [], "api": []}
     if not cfg.stage_enabled("web"):
         logger.info("[block2] disabled by config")
