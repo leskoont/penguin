@@ -171,7 +171,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         ct.paramspider(ctx, dom, js_dir / f"paramspider_{dom_safe}.txt")
 
     run_parallel([partial(_collect_js_for_host, h) for h in limited_hosts],
-                 max_workers=cfg.general.max_parallel_tools,
+                 max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                  label="block2 js url collection")
     # katana takes -list of all hosts in one shot, not per-host
     ct.katana(ctx, hosts_file, js_dir / "katana.txt")
@@ -226,7 +226,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         return (lf, sf)
 
     for out in run_parallel([partial(_process_js, i, js) for i, js in enumerate(js_list)],
-                            max_workers=cfg.general.max_parallel_tools,
+                            max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                             label="block2 js download"):
         if not out:
             continue
@@ -267,7 +267,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     # block1's DNS flood. The per-host tools run serially within a host, so at
     # any instant at most `fanout` of them are live; dividing the global budget
     # by `fanout` keeps the sum at ~threads sockets and ~rate_limit rps overall.
-    fanout = max(1, min(cfg.general.max_parallel_tools, len(limited_hosts)))
+    fanout = max(1, min(cfg.general.clamp_workers(cfg.general.max_parallel_tools), len(limited_hosts)))
     per_host_threads = max(1, cfg.general.threads // fanout)
     per_host_rate = max(1, cfg.general.rate_limit // fanout)
 
@@ -289,7 +289,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
 
     if wl.exists():
         run_parallel([partial(_dirfuzz_host, h) for h in limited_hosts],
-                     max_workers=cfg.general.max_parallel_tools,
+                     max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                      label="block2 dir fuzz")
     else:
         logger.warning("[block2] no dir-fuzz wordlist found (%s, fallback "
@@ -325,7 +325,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         return found
 
     for found in run_parallel([partial(_api_probe, i, h) for i, h in enumerate(limited_hosts)],
-                              max_workers=cfg.general.max_parallel_tools,
+                              max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                               label="block2 api recon"):
         if found:
             results["api"].extend(found)

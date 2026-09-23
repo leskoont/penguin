@@ -99,7 +99,7 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
             part = state.path(f"cloud/_bucket_{pname}_{ci}.txt")
             bucket_parts.append(part)
             bucket_tasks.append(partial(pfn, ctx, b, part))
-    run_parallel(bucket_tasks, max_workers=cfg.general.max_parallel_tools,
+    run_parallel(bucket_tasks, max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                  label="block3 bucket probes")
     # Only merge part files that have content; empty part-files created by parallel
     # probes should not be included or re-create an empty buckets.txt.
