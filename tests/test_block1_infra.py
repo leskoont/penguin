@@ -3,7 +3,11 @@ import re
 
 import pytest
 
-from penguin.pipelines.block1_infra import _extract_scoped, _scope_regex
+from penguin.pipelines.block1_infra import (
+    _augment_wordlist,
+    _extract_scoped,
+    _scope_regex,
+)
 
 
 class TestScopeRegex:
@@ -384,3 +388,39 @@ other.malicious.net (FQDN)"""
         assert "10.0.0.2" not in result  # IP
         assert "notarget.other.com" not in result  # Out of scope
         assert "other.malicious.net" not in result  # Out of scope
+
+
+class TestAugmentWordlist:
+    """Self-learning read-back: learned tokens merged into brute/perm seeds."""
+
+    def _write(self, tmp_path, name, lines):
+        p = tmp_path / name
+        p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return p
+
+    def test_no_learned_returns_base_unchanged(self, tmp_path):
+        base = self._write(tmp_path, "base.txt", ["admin", "api", "dev"])
+        out = tmp_path / "merged.txt"
+        res = _augment_wordlist(base, [], out)
+        # byte-for-byte prior behaviour: base path returned, no merged file written
+        assert res == base
+        assert not out.exists()
+
+    def test_no_learned_and_no_base_returns_none(self, tmp_path):
+        res = _augment_wordlist(tmp_path / "missing.txt", [], tmp_path / "out.txt")
+        assert res is None
+
+    def test_merges_base_and_learned_deduped_sorted(self, tmp_path):
+        base = self._write(tmp_path, "base.txt", ["admin", "api", "dev"])
+        out = tmp_path / "merged.txt"
+        res = _augment_wordlist(base, ["staging", "api", "internal"], out)
+        assert res == out
+        got = out.read_text(encoding="utf-8").split()
+        assert got == sorted(["admin", "api", "dev", "staging", "internal"])
+        assert got.count("api") == 1  # deduped across base + learned
+
+    def test_learned_only_when_base_missing(self, tmp_path):
+        out = tmp_path / "merged.txt"
+        res = _augment_wordlist(tmp_path / "missing.txt", ["vpn", "beta"], out)
+        assert res == out
+        assert out.read_text(encoding="utf-8").split() == ["beta", "vpn"]
