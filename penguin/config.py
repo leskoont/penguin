@@ -80,6 +80,18 @@ class ContinuousConfig:
 
 @dataclass
 class GeneralConfig:
+    # Named network profile that sets a coherent bundle of the concurrency /
+    # rate knobs below (threads, rate_limit, dns_rate_limit, max_parallel_tools,
+    # max_global_concurrency + the proxy validation burst). Pick one instead of
+    # hand-tuning six numbers per environment. Applied *before* explicit
+    # config.yaml values, so any knob you set by hand still wins over the
+    # profile. See NET_PROFILES for the presets:
+    #   minimal / throttle -> smallest footprint (use when the host's own
+    #                         network starts lagging under a run)
+    #   slirp (default)    -> VirtualBox user-mode NAT safe (today's values)
+    #   wsl                -> WSL2 / VMware NAT / wired bridge
+    #   vps                -> dedicated host / datacenter (old aggressive)
+    net_profile: str = "slirp"
     # SLIRP-SAFE PROFILE. The real bottleneck turned out to be VirtualBox's
     # user-mode NAT (SLIRP, the 10.0.2.15 gateway): it keeps a tiny concurrent
     # socket table and collapses the *whole* VM link when a recon burst exceeds
@@ -128,6 +140,16 @@ class GeneralConfig:
     # only off SLIRP (bridge / VMware NAT / WSL2 / VPS). Set to 1 for fully
     # sequential.
     max_parallel_tools: int = 3
+    # Global ceiling on how many penguin-spawned network operations may run at
+    # once, ACROSS every fan-out point (proxy validation + all block loops).
+    # The other concurrency knobs are per-phase; without a global cap their
+    # bursts can stack and overrun a small NAT/conntrack table (the SLIRP link
+    # drop, and a lagging host network in general). Every fan-out clamps its
+    # worker count to this, so no phase ever exceeds it. Keep it >= the largest
+    # per-phase count you want (default 40 == the slirp proxy-validation burst,
+    # so it never binds tighter than today's behaviour); lower it to hard-cap
+    # total socket pressure on a fragile link. 0 = no global clamp.
+    max_global_concurrency: int = 40
     # Max number of hosts to process per block (e.g. directory brute-force,
     # API probes in block2, open DB scanning in block3). Set to None for
     # unlimited. Keeps scanning time bounded when target has thousands of
@@ -144,6 +166,122 @@ class GeneralConfig:
     # feroxbuster is a redundant dir brute vs ffuf; keep it off by default and
     # enable only when a second engine is explicitly wanted (issue #2).
     dirfuzz_feroxbuster: bool = False
+
+    def clamp_workers(self, requested: int) -> int:
+        """Clamp a fan-out worker count to the global concurrency ceiling.
+
+        Every parallel fan-out (proxy validation, per-block loops) routes its
+        requested worker count through here so no single phase opens more
+        concurrent operations than ``max_global_concurrency`` allows. A value
+        of 0 (or negative) disables the global clamp. The result is always at
+        least 1 so a positive request never collapses to "do nothing".
+        """
+        try:
+            requested = int(requested)
+        except (TypeError, ValueError):
+            requested = 1
+        requested = max(1, requested)
+        ceiling = self.max_global_concurrency
+        if ceiling and ceiling > 0:
+            return min(requested, ceiling)
+        return requested
+
+
+# --- Named network profiles --------------------------------------------------
+# Each profile is a coherent bundle of the concurrency / rate knobs for one
+# class of network environment. Applied before the config.yaml overlay so any
+# value set explicitly in config.yaml still wins over the profile. The "slirp"
+# profile intentionally reproduces the historical defaults so selecting it (the
+# default) changes nothing. "general" keys map onto GeneralConfig fields,
+# "proxies" keys onto ProxyConfig fields.
+NET_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
+    # Smallest footprint. For when the host's own network starts lagging under
+    # a run (tiny NAT/conntrack table, weak Wi-Fi, metered link): near-serial,
+    # low rates, a small proxy-validation burst.
+    "minimal": {
+        "general": {
+            "threads": 8,
+            "rate_limit": 40,
+            "dns_rate_limit": 60,
+            "max_parallel_tools": 1,
+            "max_global_concurrency": 8,
+        },
+        "proxies": {
+            "validate_workers": 8,
+            "max_candidates": 300,
+            "target_valid": 60,
+        },
+    },
+    # VirtualBox user-mode NAT (SLIRP) safe. Historical default values.
+    "slirp": {
+        "general": {
+            "threads": 15,
+            "rate_limit": 100,
+            "dns_rate_limit": 150,
+            "max_parallel_tools": 3,
+            "max_global_concurrency": 40,
+        },
+        "proxies": {
+            "validate_workers": 40,
+            "max_candidates": 800,
+            "target_valid": 150,
+        },
+    },
+    # WSL2 / VMware NAT / wired bridge: a real NAT stack, moderate headroom.
+    "wsl": {
+        "general": {
+            "threads": 30,
+            "rate_limit": 200,
+            "dns_rate_limit": 400,
+            "max_parallel_tools": 5,
+            "max_global_concurrency": 80,
+        },
+        "proxies": {
+            "validate_workers": 80,
+            "max_candidates": 1500,
+            "target_valid": 150,
+        },
+    },
+    # Dedicated host / datacenter: the old aggressive profile.
+    "vps": {
+        "general": {
+            "threads": 50,
+            "rate_limit": 300,
+            "dns_rate_limit": 1000,
+            "max_parallel_tools": 8,
+            "max_global_concurrency": 128,
+        },
+        "proxies": {
+            "validate_workers": 120,
+            "max_candidates": 2000,
+            "target_valid": 200,
+        },
+    },
+}
+# Friendly aliases.
+NET_PROFILE_ALIASES = {"throttle": "minimal", "low": "minimal", "safe": "slirp",
+                       "default": "slirp", "bridge": "wsl", "vpn": "wsl"}
+
+
+def resolve_profile_name(name: str | None) -> str | None:
+    """Normalise a profile name/alias; return None if unknown or empty."""
+    if not name:
+        return None
+    key = str(name).strip().lower()
+    key = NET_PROFILE_ALIASES.get(key, key)
+    return key if key in NET_PROFILES else None
+
+
+def apply_net_profile(cfg: "Config", name: str) -> bool:
+    """Overlay a named network profile onto ``cfg``. Returns True if applied."""
+    resolved = resolve_profile_name(name)
+    if resolved is None:
+        return False
+    profile = NET_PROFILES[resolved]
+    _apply_section(cfg.general, profile.get("general", {}))
+    _apply_section(cfg.proxies, profile.get("proxies", {}))
+    cfg.general.net_profile = resolved
+    return True
 
 
 @dataclass
@@ -217,13 +355,39 @@ def _apply_section(obj: Any, data: dict) -> None:
                 setattr(obj, f.name, val)
 
 
-def load(config_path: str | Path | None = None) -> Config:
+def load(config_path: str | Path | None = None, profile: str | None = None) -> Config:
+    """Load config, overlaying (in increasing priority): the net profile,
+    then the on-disk config.yaml, then nothing else here.
+
+    Profile selection priority: explicit ``profile`` arg (CLI) > the
+    ``PENGUIN_NET_PROFILE`` env var > ``general.net_profile`` in config.yaml >
+    the built-in default ("slirp"). The profile is applied *before* the YAML
+    overlay so any knob set by hand in config.yaml still wins over the profile.
+    """
     cfg = Config()
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    data: dict = {}
     if path.exists():
         with open(path, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
         cfg.raw = data
+
+    # Resolve the profile name from the priority chain, then overlay it before
+    # any explicit YAML values so hand-set knobs override the profile.
+    yaml_profile = None
+    if isinstance(data.get("general"), dict):
+        yaml_profile = data["general"].get("net_profile")
+    chosen = profile or os.environ.get("PENGUIN_NET_PROFILE") or yaml_profile \
+        or cfg.general.net_profile
+    resolved = resolve_profile_name(chosen)
+    if resolved is not None:
+        apply_net_profile(cfg, resolved)
+    elif chosen:
+        # Unknown name: keep defaults but record the request so callers/tests
+        # can surface it; do not crash on a typo.
+        cfg.general.net_profile = str(chosen)
+
+    if data:
         if "general" in data:
             _apply_section(cfg.general, data["general"])
         if "stages" in data:
@@ -248,6 +412,14 @@ def load(config_path: str | Path | None = None) -> Config:
             _apply_section(cfg.notify, data["notify"])
         if "continuous" in data:
             _apply_section(cfg.continuous, data["continuous"])
+
+    # The overlay may have re-applied a lower-priority net_profile key from
+    # config.yaml; re-assert the label from the resolved selection so it always
+    # reflects the profile whose values were actually applied.
+    if resolved is not None:
+        cfg.general.net_profile = resolved
+    elif chosen:
+        cfg.general.net_profile = str(chosen)
     return cfg
 
 

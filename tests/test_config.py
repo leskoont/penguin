@@ -1,10 +1,18 @@
 """Tests for penguin.config - configuration loading."""
+import os
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from penguin.config import Config, load, load_targets
+from penguin.config import (
+    NET_PROFILES,
+    Config,
+    apply_net_profile,
+    load,
+    load_targets,
+    resolve_profile_name,
+)
 
 
 class TestLoadConfig:
@@ -253,3 +261,116 @@ class TestLoadTargets:
             assert len(targets) == 1
             assert targets[0]["type"] == "url"
             assert targets[0]["value"] == "https://example.com:8080/path"
+
+
+class TestNetProfiles:
+    """Network profile resolution, application, and precedence."""
+
+    def test_resolve_known_and_aliases(self):
+        assert resolve_profile_name("slirp") == "slirp"
+        assert resolve_profile_name("MINIMAL") == "minimal"
+        assert resolve_profile_name("throttle") == "minimal"
+        assert resolve_profile_name("safe") == "slirp"
+        assert resolve_profile_name("bridge") == "wsl"
+
+    def test_resolve_unknown_returns_none(self):
+        assert resolve_profile_name("nope") is None
+        assert resolve_profile_name("") is None
+        assert resolve_profile_name(None) is None
+
+    def test_default_profile_reproduces_slirp_values(self):
+        cfg = load("/nonexistent/config.yaml")
+        assert cfg.general.net_profile == "slirp"
+        assert cfg.general.threads == 15
+        assert cfg.general.rate_limit == 100
+        assert cfg.general.dns_rate_limit == 150
+        assert cfg.general.max_parallel_tools == 3
+        assert cfg.proxies.validate_workers == 40
+
+    def test_minimal_profile_lowers_all_knobs(self):
+        cfg = load("/nonexistent/config.yaml", profile="minimal")
+        assert cfg.general.net_profile == "minimal"
+        assert cfg.general.threads == 8
+        assert cfg.general.max_parallel_tools == 1
+        assert cfg.general.max_global_concurrency == 8
+        assert cfg.proxies.validate_workers == 8
+
+    def test_throttle_alias_maps_to_minimal(self):
+        cfg = load("/nonexistent/config.yaml", profile="throttle")
+        assert cfg.general.net_profile == "minimal"
+        assert cfg.general.threads == 8
+
+    def test_vps_profile_is_aggressive(self):
+        cfg = load("/nonexistent/config.yaml", profile="vps")
+        assert cfg.general.threads == 50
+        assert cfg.general.dns_rate_limit == 1000
+        assert cfg.general.max_parallel_tools == 8
+
+    def test_unknown_profile_keeps_defaults_no_crash(self):
+        cfg = load("/nonexistent/config.yaml", profile="bogus")
+        # label recorded but values stay at defaults
+        assert cfg.general.net_profile == "bogus"
+        assert cfg.general.threads == 15
+
+    def test_explicit_yaml_knob_overrides_profile(self):
+        yaml_content = "general:\n  net_profile: vps\n  threads: 7\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cf = Path(tmpdir) / "config.yaml"
+            cf.write_text(yaml_content, encoding="utf-8")
+            cfg = load(cf)
+            assert cfg.general.net_profile == "vps"
+            assert cfg.general.threads == 7          # pinned wins
+            assert cfg.general.rate_limit == 300     # from vps profile
+
+    def test_arg_beats_env_beats_yaml(self):
+        yaml_content = "general:\n  net_profile: vps\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cf = Path(tmpdir) / "config.yaml"
+            cf.write_text(yaml_content, encoding="utf-8")
+            old = os.environ.get("PENGUIN_NET_PROFILE")
+            try:
+                os.environ["PENGUIN_NET_PROFILE"] = "minimal"
+                # env beats yaml
+                cfg = load(cf)
+                assert cfg.general.net_profile == "minimal"
+                # explicit arg beats env
+                cfg2 = load(cf, profile="wsl")
+                assert cfg2.general.net_profile == "wsl"
+            finally:
+                if old is None:
+                    os.environ.pop("PENGUIN_NET_PROFILE", None)
+                else:
+                    os.environ["PENGUIN_NET_PROFILE"] = old
+
+    def test_apply_net_profile_direct(self):
+        cfg = Config()
+        assert apply_net_profile(cfg, "minimal") is True
+        assert cfg.general.threads == 8
+        assert apply_net_profile(cfg, "bogus") is False
+
+
+class TestClampWorkers:
+    """Global concurrency budget clamp."""
+
+    def test_clamp_binds_to_ceiling(self):
+        cfg = Config()
+        cfg.general.max_global_concurrency = 8
+        assert cfg.general.clamp_workers(40) == 8
+        assert cfg.general.clamp_workers(3) == 3
+
+    def test_clamp_zero_ceiling_disables(self):
+        cfg = Config()
+        cfg.general.max_global_concurrency = 0
+        assert cfg.general.clamp_workers(40) == 40
+
+    def test_clamp_never_below_one(self):
+        cfg = Config()
+        cfg.general.max_global_concurrency = 8
+        assert cfg.general.clamp_workers(0) == 1
+        assert cfg.general.clamp_workers(-5) == 1
+
+    def test_every_profile_has_required_keys(self):
+        for name, prof in NET_PROFILES.items():
+            g = prof.get("general", {})
+            assert "max_global_concurrency" in g, name
+            assert "max_parallel_tools" in g, name
