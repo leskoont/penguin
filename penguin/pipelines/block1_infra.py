@@ -17,6 +17,7 @@ from ..state import ARTIFACTS, RunState
 from ..tools import probe as pb
 from ..tools import resolve as rs
 from ..tools import subdomain as sd
+from ..tools import takeover as tk
 from ..tools._base import ToolContext
 from ..wordlists import WordlistManager
 
@@ -89,7 +90,7 @@ def _extract_scoped(text: str, rx: "re.Pattern[str]") -> set[str]:
 
 def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     ctx = ToolContext(cfg, run_dir=state.run_dir)
-    results: dict = {"subdomains": [], "resolved": [], "live": []}
+    results: dict = {"subdomains": [], "resolved": [], "live": [], "takeovers": []}
     if not cfg.stage_enabled("infra"):
         logger.info("[block1] disabled by config")
         return results
@@ -220,4 +221,16 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     results["resolved"] = state.read_lines(ARTIFACTS.RESOLVED)
     if live_csv.exists():
         results["live"] = state.read_lines(ARTIFACTS.LIVE_HTTPX_CSV)
+
+    # ---- subdomain-takeover detection ----
+    # Run over the resolved set (dangling records only matter for names that
+    # still resolve to a third-party). nuclei is skipped non-fatally if missing.
+    takeover_in = resolved_file if resolved_file.exists() else all_raw
+    if takeover_in.exists():
+        tk_out = state.path("takeovers.jsonl")
+        if tk.nuclei_takeover(ctx, takeover_in, tk_out):
+            results["takeovers"] = tk.parse_nuclei_takeovers(tk_out)
+            if results["takeovers"]:
+                logger.warning("[block1] %d potential subdomain takeover(s)",
+                               len(results["takeovers"]))
     return results

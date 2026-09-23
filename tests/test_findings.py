@@ -43,6 +43,15 @@ class TestDerive:
         b1, b2, b3, b4 = _blocks()
         assert derive_findings(_TARGET, b1, b2, b3, b4, {"new": []}) == []
 
+    def test_takeover_is_critical_finding(self):
+        b1, b2, b3, b4 = _blocks()
+        b1["takeovers"] = ["gone.ex.com"]
+        fs = derive_findings(_TARGET, b1, b2, b3, b4, {"new": []})
+        assert len(fs) == 1
+        assert fs[0].type == "subdomain_takeover"
+        assert fs[0].severity == "critical"
+        assert fs[0].url == "gone.ex.com"
+
     def test_severity_sort_orders_critical_first(self):
         fs = [Finding("new_subdomain", "info", "t", "a"),
               Finding("exposed_git", "critical", "t", "b")]

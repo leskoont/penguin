@@ -86,7 +86,7 @@ ProgressCb = Callable[[int, str, str], None]
 # already produces -- downstream `b#["key"]` / `b#.get("key")` lookups never
 # KeyError on a failed block.
 _BLOCK_FALLBACKS: dict[int, dict] = {
-    1: {"subdomains": [], "resolved": [], "live": []},
+    1: {"subdomains": [], "resolved": [], "live": [], "takeovers": []},
     2: {"endpoints": [], "js_secrets": [], "api": []},
     3: {"open_db": [], "buckets": []},
     4: {"origin_ips": [], "exposed_git": [], "secrets": []},
@@ -101,14 +101,15 @@ _BLOCKS: list[tuple[int, str, Callable]] = [
 ]
 
 
-def _critical_findings(b2: dict, b3: dict, b4: dict) -> dict[str, int]:
-    """Non-empty high-severity finding categories across blocks 2-4.
+def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict) -> dict[str, int]:
+    """Non-empty high-severity finding categories across blocks 1-4.
 
     Returns only categories with a positive count, so callers can treat a
     truthy result as "something worth a critical alert". Kept pure + separate
     from run_target so it is unit-testable without running the pipeline.
     """
     categories = {
+        "subdomain takeovers": len(b1.get("takeovers", [])),
         "secrets": len(b2.get("js_secrets", [])) + len(b4.get("secrets", [])),
         "open databases": len(b3.get("open_db", [])),
         "exposed .git": len(b4.get("exposed_git", [])),
@@ -227,7 +228,7 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
     # artifacts the pipeline surfaces: leaked secrets, open databases, exposed
     # .git, and public buckets. notify() itself is gated on notify.enabled +
     # the event being in notify_on, so this is a no-op unless configured.
-    hits = _critical_findings(b2, b3, b4)
+    hits = _critical_findings(b1, b2, b3, b4)
     if hits:
         detail = ", ".join(f"{n} {k}" for k, n in hits.items())
         logger.warning("[%s] CRITICAL findings: %s", target["value"], detail)
@@ -254,6 +255,7 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "new_subdomains": len(diff["new"]),
         "exposed_git": len(b4.get("exposed_git", [])),
         "secrets": len(b2.get("js_secrets", [])) + len(b4.get("secrets", [])),
+        "takeovers": len(b1.get("takeovers", [])),
     }
 
     # Typed, severity-ranked findings, accumulated per target with a

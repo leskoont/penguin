@@ -55,6 +55,7 @@ class Finding:
 
 # Per-finding-type metadata: severity + the tool(s) that surface it.
 _TYPES = {
+    "subdomain_takeover": ("critical", "nuclei/subzy"),
     "exposed_git":   ("critical", "gitdumper"),
     "secret":        ("critical", "trufflehog/gitleaks"),
     "js_secret":     ("high",     "jsluice/SecretFinder"),
@@ -80,6 +81,9 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
     host:port, a bucket URL, or an evidence file path)."""
     tv = str(target.get("value", ""))
     out: list[Finding] = []
+    for host in b1.get("takeovers", []):
+        out.append(_mk("subdomain_takeover", tv, host, url=str(host),
+                       evidence="dangling record claimable"))
     for host in diff.get("new", []):
         out.append(_mk("new_subdomain", tv, host))
     for sec in b2.get("js_secrets", []):
