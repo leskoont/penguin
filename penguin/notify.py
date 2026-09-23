@@ -6,10 +6,8 @@ or critical findings.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
-from typing import Optional
 
 import requests
 
@@ -41,7 +39,7 @@ def notify(cfg: Config, message: str, *, level: str = "info", event: str = "") -
         elif provider == "telegram":
             # webhook env expected as https://api.telegram.org/bot<token>/sendMessage?chat_id=<id>
             # Extract chat_id from URL query parameter
-            from urllib.parse import urlparse, parse_qs
+            from urllib.parse import parse_qs, urlparse
             parsed = urlparse(webhook)
             query = parse_qs(parsed.query)
             chat_id = query.get("chat_id", [None])[0]

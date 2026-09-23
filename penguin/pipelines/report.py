@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 
 from ..config import Config
-from ..state import RunState
 
 logger = logging.getLogger("penguin.report")
 

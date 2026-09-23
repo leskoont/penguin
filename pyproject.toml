@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "penguin-recon"
+version = "0.1.0"
+description = "Modular, self-learning recon automation framework (passive -> resolve -> probe -> enrich -> content discovery -> diff/alert)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "penguin contributors" }]
+keywords = ["recon", "security", "automation", "pipeline"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Console",
+]
+
+# Runtime dependencies. Keep in sync with requirements.txt (which stays for the
+# venv bootstrap in venv.py); dev-only tools live in the [dev] extra below.
+dependencies = [
+    "pyyaml>=6.0",
+    "requests>=2.31",
+    "PySocks>=1.7.1",
+    "rich>=13.7",
+    "typer>=0.12",
+    "questionary>=2.0",
+    "textual>=0.58",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+penguin = "penguin.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/leskoont/penguin"
+Repository = "https://github.com/leskoont/penguin"
+
+[tool.setuptools.packages.find]
+include = ["penguin*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+# Match the existing code style: the tree is not currently ruff-clean end to
+# end, so start with a conservative, high-signal rule set and expand later.
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+# E501 (line length) and a few noisy pyflakes cases are left for a dedicated
+# cleanup pass so CI can go green on the current tree without a mass reformat.
+ignore = ["E501", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F401", "F811"]
+# __main__ must run the venv bootstrap (ensure_venv) BEFORE importing the CLI,
+# so its top-level imports deliberately sit below that call.
+"penguin/__main__.py" = ["E402"]

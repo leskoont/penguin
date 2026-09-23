@@ -65,6 +65,5 @@ def check_critical_urls() -> list[tuple[str, bool, Optional[str]]]:
     for label, url in CRITICAL_URLS.items():
         is_alive, error = check_url_liveness(url)
         results.append((label, is_alive, error))
-        status_str = "[green]OK[/]" if is_alive else f"[red]DEAD[/] ({error})"
         LOG.info("[url-check] %-45s %s", label, "OK" if is_alive else f"DEAD ({error})")
     return results

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from penguin.config import Config
-from penguin.state import RunState, Artifacts, ARTIFACTS
+from penguin.state import ARTIFACTS, Artifacts, RunState
 
 
 class TestAddLines:

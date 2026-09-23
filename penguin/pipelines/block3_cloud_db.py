@@ -10,8 +10,8 @@ from ..config import Config
 from ..parallel import run_parallel
 from ..pipelines.block2_web import _select_hosts
 from ..state import ARTIFACTS, RunState
-from ..tools import ports as pt
 from ..tools import cloud as cl
+from ..tools import ports as pt
 from ..tools import resolve as rs
 from ..tools._base import ToolContext
 

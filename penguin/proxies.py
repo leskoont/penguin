@@ -14,13 +14,12 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from dataclasses import dataclass, asdict
-from pathlib import Path
+from dataclasses import asdict, dataclass
 from typing import Optional
-from urllib.request import Request, urlopen
 from urllib.error import URLError
+from urllib.request import Request, urlopen
 
-from .config import Config, ProxyConfig
+from .config import Config
 
 logger = logging.getLogger("penguin.proxies")
 

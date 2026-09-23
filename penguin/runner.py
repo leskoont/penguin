@@ -148,7 +148,7 @@ def run(
             if is_permanent(binary, proc.returncode, last_err):
                 logger.warning("[fail-fast] %s -> permanent failure, not retrying", binary)
                 break
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
             last_err = f"timeout after {timeout}s"
             logger.warning("[retry %d/%d] %s -> %s", log_a, log_n, binary, last_err)
         except FileNotFoundError as exc:
