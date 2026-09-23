@@ -86,6 +86,9 @@ penguin.bat run --target example.com          # Windows cmd
 
 # validate config + diff engine + proxies
 ./penguin.sh self-test
+
+# explain a finished run (per-tool outcomes, zero-output sources, timeouts)
+./penguin.sh diagnose results/example.com/<run_id>
 ```
 
 If `penguin run` is invoked with no `--target` and `config/targets.txt` is
