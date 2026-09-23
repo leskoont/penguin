@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 import re
 from functools import partial
+from pathlib import Path
+from typing import Optional
 
 from ..config import Config
 from ..parallel import run_parallel
@@ -16,8 +18,43 @@ from ..tools import probe as pb
 from ..tools import resolve as rs
 from ..tools import subdomain as sd
 from ..tools._base import ToolContext
+from ..wordlists import WordlistManager
 
 logger = logging.getLogger("penguin.block1")
+
+
+def _augment_wordlist(base: Path, learned: list[str], out: Path) -> Optional[Path]:
+    """Merge a base wordlist with self-learned tokens for brute/permutations.
+
+    This closes the self-learning loop: tokens accumulated into
+    ``wordlists/learned.txt`` on previous runs (path/param/subdomain nouns) are
+    folded back into the brute-force and permutation seed lists here.
+
+    Returns the path to use, or None when there is nothing to feed:
+      * no learned tokens         -> return ``base`` unchanged (byte-for-byte
+                                     identical behaviour to before this feature),
+                                     or None if ``base`` is also missing;
+      * learned tokens present    -> write the deduped union to ``out`` and
+                                     return it (works even if ``base`` is
+                                     missing, so learned tokens alone can seed a
+                                     run).
+    """
+    base_words: set[str] = set()
+    if base.exists():
+        base_words = {
+            ln.strip() for ln in base.read_text(encoding="utf-8", errors="ignore").splitlines()
+            if ln.strip()
+        }
+    if not learned:
+        return base if base_words else None
+    merged = base_words | set(learned)
+    if not merged:
+        return None
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(sorted(merged)) + "\n", encoding="utf-8")
+    logger.info("[block1] self-learning: %s = %d base + %d learned -> %d tokens",
+                out.name, len(base_words), len(learned), len(merged))
+    return out
 
 
 def _domain_targets(cfg: Config, target: dict) -> list[str]:
@@ -95,13 +132,21 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     if not resolvers.exists():
         logger.info("[block1] no resolvers file; bootstrapping via dnsvalidator")
         rs.dnsvalidator(ctx, resolvers)
+    # Self-learning read-back: tokens learned on previous runs feed this run's
+    # brute-force + permutation seeds (they are written by master.py after
+    # block2 and persist across runs in wordlists/learned.txt).
+    learned = sorted(WordlistManager(cfg).learned())
+    if learned:
+        logger.info("[block1] self-learning: %d learned tokens available for brute + perms", len(learned))
+
     if resolvers.exists():
         from ..tools import resolve as rs2
 
         brute_wl = cfg.path("wordlists/subdomains-large.txt")
-        if brute_wl.exists():
+        effective_brute = _augment_wordlist(brute_wl, learned, sub_dir / "brute_wordlist.txt")
+        if effective_brute is not None:
             for dom in domains:
-                rs2.puredns_bruteforce(ctx, dom, brute_wl, resolvers,
+                rs2.puredns_bruteforce(ctx, dom, effective_brute, resolvers,
                                        sub_dir / f"puredns_brute_{dom}.txt")
         else:
             # Without this guard puredns is invoked anyway and fails 3x with
@@ -109,8 +154,9 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
             # guaranteed-permanent error. Skip loudly instead: a missing brute
             # wordlist is the single biggest cause of subdomain-count
             # degradation, so make it visible rather than a buried retry storm.
-            logger.warning("[block1] brute wordlist missing (%s); skipping puredns "
-                           "bruteforce -- run scripts/install.sh to fetch wordlists", brute_wl)
+            logger.warning("[block1] brute wordlist missing (%s) and no learned tokens; "
+                           "skipping puredns bruteforce -- run scripts/install.sh to "
+                           "fetch wordlists", brute_wl)
         perms_in = sub_dir / "all_for_perms.txt"
         perms_in.write_text("\n".join(sorted(raw_lines)), encoding="utf-8")
 
@@ -122,10 +168,11 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         # dnsgen was removed too: its output is redundant with gotator's
         # permutation space, so it only added wall-clock and duplicate names.
         words = cfg.path("wordlists/permutation-words.txt")
+        effective_words = _augment_wordlist(words, learned, sub_dir / "perm_words.txt")
         gen_tasks = []
-        if words.exists():
+        if effective_words is not None:
             gen_tasks.append(partial(rs2.gotator, ctx, perms_in,
-                                     sub_dir / "gotator_perms.txt", words))
+                                     sub_dir / "gotator_perms.txt", effective_words))
         if gen_tasks:
             run_parallel(gen_tasks, max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                          label="block1 permutation gen")
