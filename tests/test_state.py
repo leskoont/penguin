@@ -356,3 +356,58 @@ class TestArtifacts:
     def test_artifacts_singleton(self):
         """ARTIFACTS is a singleton."""
         assert isinstance(ARTIFACTS, Artifacts)
+
+
+class TestPruneHistory:
+    """Retention: general.keep_runs bounds run dirs + history snapshots."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        d = tempfile.mkdtemp()
+        yield d
+        shutil.rmtree(d, ignore_errors=True)
+
+    def _cfg(self, temp_dir, keep):
+        cfg = Config()
+        cfg.general.output_dir = temp_dir
+        cfg.general.keep_runs = keep
+        return cfg
+
+    def test_keep_runs_zero_disables_pruning(self, temp_dir):
+        cfg = self._cfg(temp_dir, 0)
+        for _ in range(4):
+            st = RunState(cfg, "ex.com")
+            st.add_lines("all_subdomains.txt", ["a.ex.com"])
+            st.archive()
+        base = Path(temp_dir) / "ex.com"
+        runs = [d for d in base.iterdir() if d.is_dir() and d.name != "history"]
+        hist = list((base / "history").iterdir())
+        assert len(runs) == 4
+        assert len(hist) == 4
+
+    def test_keep_runs_bounds_dirs(self, temp_dir):
+        cfg = self._cfg(temp_dir, 2)
+        for _ in range(5):
+            st = RunState(cfg, "ex.com")
+            st.add_lines("all_subdomains.txt", ["a.ex.com"])
+            st.archive()
+        base = Path(temp_dir) / "ex.com"
+        runs = sorted(d.name for d in base.iterdir() if d.is_dir() and d.name != "history")
+        hist = sorted(d.name for d in (base / "history").iterdir())
+        assert len(runs) == 2, runs
+        assert len(hist) == 2, hist
+        # the most recent run is always retained
+        assert st.run_id in runs
+        assert st.run_id in hist
+
+    def test_prune_keeps_newest(self, temp_dir):
+        cfg = self._cfg(temp_dir, 3)
+        ids = []
+        for _ in range(5):
+            st = RunState(cfg, "ex.com")
+            st.add_lines("all_subdomains.txt", ["a.ex.com"])
+            st.archive()
+            ids.append(st.run_id)
+        base = Path(temp_dir) / "ex.com"
+        kept = sorted(d.name for d in base.iterdir() if d.is_dir() and d.name != "history")
+        assert kept == sorted(ids[-3:])

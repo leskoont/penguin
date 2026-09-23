@@ -224,8 +224,41 @@ class RunState:
         return res
 
     def archive(self) -> None:
-        """Copy this run into history/ for future diffs."""
+        """Copy this run into history/ for future diffs, then prune old runs."""
         dest = self.history_dir / self.run_id
         if dest.exists():
             shutil.rmtree(dest)
         shutil.copytree(self.run_dir, dest)
+        self.prune_history()
+
+    def prune_history(self) -> int:
+        """Enforce general.keep_runs: keep only the newest N run dirs and N
+        history snapshots per target, deleting older ones. Returns the number of
+        directories removed. 0/negative keep_runs disables pruning. The current
+        run is always kept regardless of ordering. Never raises."""
+        keep = getattr(self.cfg.general, "keep_runs", 0) or 0
+        if keep <= 0:
+            return 0
+        removed = 0
+        # History snapshots (timestamped names sort chronologically).
+        try:
+            hist = sorted(d for d in self.history_dir.iterdir() if d.is_dir())
+            for d in hist[:-keep]:
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+        except OSError:
+            pass
+        # Run directories under the target base (exclude history/ and always
+        # keep the current run).
+        try:
+            runs = sorted(
+                d for d in self.base.iterdir()
+                if d.is_dir() and d.name != "history" and d != self.run_dir
+            )
+            # keep the newest (keep-1) besides the current run == newest `keep`
+            for d in runs[:-(keep - 1)] if keep > 1 else runs:
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+        except OSError:
+            pass
+        return removed

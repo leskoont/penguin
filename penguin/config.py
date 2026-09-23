@@ -159,6 +159,12 @@ class GeneralConfig:
     # larger cap than the web/infra stages. Its own knob so an explicit
     # max_hosts_per_block value is never silently overridden. None = unlimited.
     max_hosts_block3: Optional[int] = 100
+    # Retention: keep only the newest N run directories AND the newest N history
+    # snapshots per target, pruning older ones after each run. results/ grows by
+    # a full run dir + a history copytree every run, so frequent test runs bloat
+    # disk fast. 0 = keep everything (previous behaviour). The diff engine only
+    # needs the single most recent history snapshot, so even keep_runs=2 is safe.
+    keep_runs: int = 0
     # Dir-fuzz wordlist knob (issue #2). Default raft-medium-directories (~30k)
     # instead of directory-list-2.3-medium (~220k). If the chosen file is
     # missing, block2 falls back to wordlists/directory-list-2.3-medium.txt.
