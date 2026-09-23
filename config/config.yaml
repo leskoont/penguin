@@ -3,6 +3,20 @@
 # Every paid integration is DISABLED by default.
 
 general:
+  # Network profile: one selector for the whole concurrency/rate bundle instead
+  # of hand-tuning the six knobs below per environment. Applied BEFORE the
+  # explicit values here, so anything you set by hand still wins over the
+  # profile. Presets:
+  #   minimal / throttle : smallest footprint -- use when your OWN machine's
+  #                        network starts lagging under a run (tiny NAT table,
+  #                        weak Wi-Fi, metered link). Near-serial, low rates.
+  #   slirp   (default)  : VirtualBox user-mode NAT safe (the values below).
+  #   wsl                : WSL2 / VMware NAT / wired bridge (moderate).
+  #   vps                : dedicated host / datacenter (aggressive 50/300/1000/8).
+  # Override per-run without editing this file:
+  #   penguin run --net-profile wsl   |   penguin run --throttle
+  #   PENGUIN_NET_PROFILE=minimal penguin run
+  net_profile: slirp
   # SLIRP-SAFE PROFILE. The link drops came from VirtualBox's user-mode NAT
   # (SLIRP, gateway 10.0.2.2 / guest 10.0.2.15), NOT the physical router or the
   # proxy pool: a recon connection burst overruns SLIRP's tiny socket table and
@@ -42,6 +56,13 @@ general:
   # SLIRP's table and drops the VM link, so 3 here. Set to 1 for fully
   # sequential; raise only off SLIRP.
   max_parallel_tools: 3
+  # Global ceiling on concurrent penguin-spawned network ops ACROSS every
+  # fan-out point (proxy validation + all block loops). The other knobs are
+  # per-phase; this is the one hard cap on total socket pressure, so if a run
+  # still lags your link, lower THIS. Every fan-out clamps its worker count to
+  # it. Keep it >= the largest per-phase count you want; 0 = no global clamp.
+  # (Profiles set it: minimal=8, slirp=40, wsl=80, vps=128.)
+  max_global_concurrency: 40
   # Cap on live hosts per block (dir-fuzz, API probes, open DB scan). None = unlimited.
   max_hosts_per_block: 50
   # Dedicated cap for block3 (open-DB/cloud masscan/nmap); own knob so an

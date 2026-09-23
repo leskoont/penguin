@@ -372,20 +372,27 @@ def load(config_path: str | Path | None = None, profile: str | None = None) -> C
             data = yaml.safe_load(fh) or {}
         cfg.raw = data
 
-    # Resolve the profile name from the priority chain, then overlay it before
-    # any explicit YAML values so hand-set knobs override the profile.
+    # Profile selection has two tiers with different precedence vs. the
+    # config.yaml knobs:
+    #   * A RUNTIME request -- the --net-profile/--throttle CLI flag (``profile``
+    #     arg) or the PENGUIN_NET_PROFILE env var -- is a deliberate override for
+    #     THIS run and wins over knobs pinned in config.yaml. Otherwise the
+    #     shipped config.yaml (which pins every SLIRP value explicitly) would
+    #     make --throttle a no-op.
+    #   * A FILE/DEFAULT profile -- general.net_profile in config.yaml, or the
+    #     built-in default -- sits below the file's own explicit knobs, so a
+    #     hand-set threads:/rate_limit: still wins over it.
     yaml_profile = None
     if isinstance(data.get("general"), dict):
         yaml_profile = data["general"].get("net_profile")
-    chosen = profile or os.environ.get("PENGUIN_NET_PROFILE") or yaml_profile \
-        or cfg.general.net_profile
-    resolved = resolve_profile_name(chosen)
-    if resolved is not None:
-        apply_net_profile(cfg, resolved)
-    elif chosen:
-        # Unknown name: keep defaults but record the request so callers/tests
-        # can surface it; do not crash on a typo.
-        cfg.general.net_profile = str(chosen)
+    runtime_choice = profile or os.environ.get("PENGUIN_NET_PROFILE")
+    file_choice = yaml_profile or cfg.general.net_profile
+
+    # Tier 1: apply the file/default profile BEFORE the YAML overlay so pinned
+    # knobs can still override it.
+    file_resolved = resolve_profile_name(file_choice)
+    if file_resolved is not None:
+        apply_net_profile(cfg, file_resolved)
 
     if data:
         if "general" in data:
@@ -413,13 +420,23 @@ def load(config_path: str | Path | None = None, profile: str | None = None) -> C
         if "continuous" in data:
             _apply_section(cfg.continuous, data["continuous"])
 
-    # The overlay may have re-applied a lower-priority net_profile key from
-    # config.yaml; re-assert the label from the resolved selection so it always
-    # reflects the profile whose values were actually applied.
-    if resolved is not None:
-        cfg.general.net_profile = resolved
-    elif chosen:
-        cfg.general.net_profile = str(chosen)
+    # Tier 2: a runtime-requested profile is applied AFTER the YAML overlay so it
+    # wins over knobs pinned in config.yaml.
+    if runtime_choice:
+        runtime_resolved = resolve_profile_name(runtime_choice)
+        if runtime_resolved is not None:
+            apply_net_profile(cfg, runtime_resolved)
+            cfg.general.net_profile = runtime_resolved
+        else:
+            # Unknown name (typo): keep whatever values are in effect, but record
+            # the request rather than crashing.
+            cfg.general.net_profile = str(runtime_choice)
+    elif file_resolved is not None:
+        # No runtime override: reflect the file/default profile whose values were
+        # applied (the overlay may have re-set the label from config.yaml).
+        cfg.general.net_profile = file_resolved
+    elif file_choice:
+        cfg.general.net_profile = str(file_choice)
     return cfg
 
 

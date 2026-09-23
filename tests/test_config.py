@@ -342,6 +342,43 @@ class TestNetProfiles:
                 else:
                     os.environ["PENGUIN_NET_PROFILE"] = old
 
+    def test_runtime_profile_beats_pinned_yaml_knobs(self):
+        # The shipped config.yaml pins every SLIRP knob explicitly. A runtime
+        # request (CLI --throttle / --net-profile, or the env var) must still
+        # win over those pins, or --throttle would be a no-op for most users.
+        yaml_content = (
+            "general:\n"
+            "  net_profile: slirp\n"
+            "  threads: 15\n"
+            "  rate_limit: 100\n"
+            "  max_parallel_tools: 3\n"
+            "  max_global_concurrency: 40\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cf = Path(tmpdir) / "config.yaml"
+            cf.write_text(yaml_content, encoding="utf-8")
+            # No runtime override -> pinned SLIRP values stand.
+            base = load(cf)
+            assert base.general.threads == 15 and base.general.net_profile == "slirp"
+            # CLI --throttle (profile arg) beats the pinned knobs.
+            thr = load(cf, profile="throttle")
+            assert thr.general.net_profile == "minimal"
+            assert thr.general.threads == 8
+            assert thr.general.rate_limit == 40
+            assert thr.general.max_global_concurrency == 8
+            # env override beats them too.
+            old = os.environ.get("PENGUIN_NET_PROFILE")
+            try:
+                os.environ["PENGUIN_NET_PROFILE"] = "vps"
+                env = load(cf)
+                assert env.general.net_profile == "vps"
+                assert env.general.threads == 50
+            finally:
+                if old is None:
+                    os.environ.pop("PENGUIN_NET_PROFILE", None)
+                else:
+                    os.environ["PENGUIN_NET_PROFILE"] = old
+
     def test_apply_net_profile_direct(self):
         cfg = Config()
         assert apply_net_profile(cfg, "minimal") is True
