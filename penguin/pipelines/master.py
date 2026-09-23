@@ -42,6 +42,22 @@ _BLOCKS: list[tuple[int, str, Callable]] = [
 ]
 
 
+def _critical_findings(b2: dict, b3: dict, b4: dict) -> dict[str, int]:
+    """Non-empty high-severity finding categories across blocks 2-4.
+
+    Returns only categories with a positive count, so callers can treat a
+    truthy result as "something worth a critical alert". Kept pure + separate
+    from run_target so it is unit-testable without running the pipeline.
+    """
+    categories = {
+        "secrets": len(b2.get("js_secrets", [])) + len(b4.get("secrets", [])),
+        "open databases": len(b3.get("open_db", [])),
+        "exposed .git": len(b4.get("exposed_git", [])),
+        "public buckets": len(b3.get("buckets", [])),
+    }
+    return {k: n for k, n in categories.items() if n}
+
+
 def _emit(cb: Optional[ProgressCb], block_num: int, name: str, phase: str) -> None:
     if cb is None:
         return
@@ -141,6 +157,21 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
             logger.exception("[%s] notify failed", target["value"])
         logger.info("[diff] %d new subdomains", len(diff["new"]))
 
+    # critical findings notification (gap: `critical_findings` was declared in
+    # notify_on but nothing ever emitted it). Alert on the high-severity
+    # artifacts the pipeline surfaces: leaked secrets, open databases, exposed
+    # .git, and public buckets. notify() itself is gated on notify.enabled +
+    # the event being in notify_on, so this is a no-op unless configured.
+    hits = _critical_findings(b2, b3, b4)
+    if hits:
+        detail = ", ".join(f"{n} {k}" for k, n in hits.items())
+        logger.warning("[%s] CRITICAL findings: %s", target["value"], detail)
+        try:
+            notify(cfg, f"[{target['value']}] critical findings: {detail}",
+                   level="critical", event="critical_findings")
+        except Exception:
+            logger.exception("[%s] critical notify failed", target["value"])
+
     try:
         state.archive()
     except Exception:
@@ -157,6 +188,7 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "buckets": len(b3.get("buckets", [])),
         "new_subdomains": len(diff["new"]),
         "exposed_git": len(b4.get("exposed_git", [])),
+        "secrets": len(b2.get("js_secrets", [])) + len(b4.get("secrets", [])),
     }
     logger.info("=== done %s: %s ===", target["value"], summary)
     return summary
