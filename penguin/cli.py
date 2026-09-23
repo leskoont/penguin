@@ -57,6 +57,16 @@ def _merge(ctx: typer.Context, verbose: bool, config: Optional[str], targets: Op
     return (config or g.config), (targets or g.targets)
 
 
+def _profile(net_profile: Optional[str], throttle: bool) -> Optional[str]:
+    """Resolve the network-profile override for load(). ``--throttle`` is a
+    shortcut for the smallest-footprint 'minimal' profile and wins over an
+    explicit ``--net-profile``; returning None leaves profile selection to the
+    env var / config.yaml / built-in default chain in config.load()."""
+    if throttle:
+        return "minimal"
+    return net_profile
+
+
 @app.callback(invoke_without_command=True)
 def _top(
     ctx: typer.Context,
@@ -79,6 +89,8 @@ def cmd_run(
     ctx: typer.Context,
     target: Optional[str] = typer.Option(None, "--target", help="single domain to scan"),
     refresh_proxies: bool = typer.Option(False, "--refresh-proxies"),
+    net_profile: Optional[str] = typer.Option(None, "--net-profile", help="network profile: minimal|slirp|wsl|vps (overrides config)"),
+    throttle: bool = typer.Option(False, "--throttle", help="shortcut for --net-profile minimal (smallest network footprint)"),
     # NOTE: -v, -c, -t duplicated on every subcommand because typer does not merge
     # top-level @app.callback() options with subcommand options. Typer limitation:
     # flags must appear on every command to work both before and after the subcommand name.
@@ -89,7 +101,8 @@ def cmd_run(
     reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
 ) -> int:
     cfg_path, targets_path = _merge(ctx, verbose, config, targets)
-    cfg = load(cfg_path)
+    cfg = load(cfg_path, profile=_profile(net_profile, throttle))
+    LOG.info("[net] profile=%s max_global_concurrency=%d", cfg.general.net_profile, cfg.general.max_global_concurrency)
     pool = get_pool(cfg)
     if cfg.proxies.enabled:
         valid = refresh_proxy_pool(pool, console, force=refresh_proxies)
@@ -115,6 +128,8 @@ def cmd_run(
 def cmd_continuous(
     ctx: typer.Context,
     interval: Optional[str] = typer.Option(None, "--interval", help="override interval e.g. 6h"),
+    net_profile: Optional[str] = typer.Option(None, "--net-profile", help="network profile: minimal|slirp|wsl|vps (overrides config)"),
+    throttle: bool = typer.Option(False, "--throttle", help="shortcut for --net-profile minimal (smallest network footprint)"),
     verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
     config: Optional[str] = typer.Option(None, "-c", "--config", help="path to config.yaml"),
     targets: Optional[str] = typer.Option(None, "-t", "--targets", help="path to targets.txt"),
@@ -122,7 +137,8 @@ def cmd_continuous(
     reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
 ) -> int:
     cfg_path, targets_path = _merge(ctx, verbose, config, targets)
-    cfg = load(cfg_path)
+    cfg = load(cfg_path, profile=_profile(net_profile, throttle))
+    LOG.info("[net] profile=%s max_global_concurrency=%d", cfg.general.net_profile, cfg.general.max_global_concurrency)
     resolved = load_targets(targets_path)
     if not resolved:
         LOG.error("no targets for continuous mode")
@@ -146,6 +162,8 @@ def cmd_continuous(
 @app.command("self-test", help="validate config + diff engine + proxies")
 def cmd_self_test(
     ctx: typer.Context,
+    net_profile: Optional[str] = typer.Option(None, "--net-profile", help="network profile: minimal|slirp|wsl|vps (overrides config)"),
+    throttle: bool = typer.Option(False, "--throttle", help="shortcut for --net-profile minimal (smallest network footprint)"),
     verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
     config: Optional[str] = typer.Option(None, "-c", "--config", help="path to config.yaml"),
     targets: Optional[str] = typer.Option(None, "-t", "--targets", help="path to targets.txt"),
@@ -153,8 +171,11 @@ def cmd_self_test(
     reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
 ) -> int:
     cfg_path, _ = _merge(ctx, verbose, config, targets)
-    cfg = load(cfg_path)
+    cfg = load(cfg_path, profile=_profile(net_profile, throttle))
     ok = True
+    LOG.info("[selftest] net profile=%s threads=%d rate=%d dns_rate=%d max_parallel=%d max_global=%d",
+             cfg.general.net_profile, cfg.general.threads, cfg.general.rate_limit,
+             cfg.general.dns_rate_limit, cfg.general.max_parallel_tools, cfg.general.max_global_concurrency)
     LOG.info("[selftest] config loaded: stages=%s", cfg.stages)
     LOG.info("[selftest] proxies.enabled=%s", cfg.proxies.enabled)
     pool = get_pool(cfg)
@@ -248,6 +269,8 @@ def cmd_install_check(
 def cmd_tui(
     ctx: typer.Context,
     target: Optional[str] = typer.Option(None, "--target", help="single domain to scan"),
+    net_profile: Optional[str] = typer.Option(None, "--net-profile", help="network profile: minimal|slirp|wsl|vps (overrides config)"),
+    throttle: bool = typer.Option(False, "--throttle", help="shortcut for --net-profile minimal (smallest network footprint)"),
     verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
     config: Optional[str] = typer.Option(None, "-c", "--config", help="path to config.yaml"),
     targets: Optional[str] = typer.Option(None, "-t", "--targets", help="path to targets.txt"),
@@ -255,7 +278,7 @@ def cmd_tui(
     reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
 ) -> int:
     cfg_path, targets_path = _merge(ctx, verbose, config, targets)
-    cfg = load(cfg_path)
+    cfg = load(cfg_path, profile=_profile(net_profile, throttle))
     resolved = resolve_targets(cfg, targets_path, target)
     if not resolved:
         LOG.error("no targets; pass --target or populate config/targets.txt")
@@ -281,6 +304,8 @@ def cmd_tui(
 @app.command("proxies", help="refresh proxy pool now")
 def cmd_proxies(
     ctx: typer.Context,
+    net_profile: Optional[str] = typer.Option(None, "--net-profile", help="network profile: minimal|slirp|wsl|vps (overrides config)"),
+    throttle: bool = typer.Option(False, "--throttle", help="shortcut for --net-profile minimal (smallest network footprint)"),
     verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
     config: Optional[str] = typer.Option(None, "-c", "--config", help="path to config.yaml"),
     targets: Optional[str] = typer.Option(None, "-t", "--targets", help="path to targets.txt"),
@@ -288,7 +313,9 @@ def cmd_proxies(
     reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
 ) -> int:
     cfg_path, _ = _merge(ctx, verbose, config, targets)
-    cfg = load(cfg_path)
+    cfg = load(cfg_path, profile=_profile(net_profile, throttle))
+    LOG.info("[net] profile=%s validate_workers=%d (clamped to %d)", cfg.general.net_profile,
+             cfg.proxies.validate_workers, cfg.general.clamp_workers(cfg.proxies.validate_workers))
     pool = get_pool(cfg)
     valid = refresh_proxy_pool(pool, console, force=True)
     LOG.info("[proxies] %d valid (http/socks5) -> %s", len(valid), cfg.proxies.pool_file)
