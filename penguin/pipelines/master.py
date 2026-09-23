@@ -256,6 +256,21 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "secrets": len(b2.get("js_secrets", [])) + len(b4.get("secrets", [])),
     }
 
+    # Typed, severity-ranked findings, accumulated per target with a
+    # first_seen_run stamp so the report can show what is new this run for every
+    # finding type (not only subdomains). Never let this break the run.
+    try:
+        from ..findings import FindingStore, derive_findings
+        store = FindingStore.for_target(cfg.path("reports"), target["value"])
+        derived = derive_findings(target, b1, b2, b3, b4, diff)
+        current, new_findings = store.record(derived, state.run_dir.name)
+        summary["findings"] = [f.to_dict() for f in current]
+        summary["new_findings"] = len(new_findings)
+    except Exception:  # noqa
+        logger.exception("[%s] findings derivation failed", target["value"])
+        summary["findings"] = []
+        summary["new_findings"] = 0
+
     # Per-run manifest (config snapshot + tool presence + rolled-up ledger) so
     # `penguin diagnose <run_dir>` can explain the run without log grepping.
     try:
