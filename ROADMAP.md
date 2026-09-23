@@ -5,6 +5,37 @@ codebase. Derived from a full read of `penguin/` (config, runner, state,
 proxies, wordlists, notify, venv, `tools/*`, `pipelines/*`, `ui/*`) on
 2026-07-14.
 
+## ✅ Status — 2026-09-23
+
+Delivered since the plan was written (each as its own commit, suite green):
+
+- **P(-1) network stabilization & universalization** — named network profiles
+  (`minimal`/`throttle` · `slirp` · `wsl` · `vps`) via `--net-profile` /
+  `--throttle` / `PENGUIN_NET_PROFILE` / `config.yaml`, applied before the YAML
+  overlay (runtime request overrides pinned knobs). Global concurrency budget
+  `max_global_concurrency` clamps every fan-out (proxy validation + all block
+  loops) so bursts can't stack.
+- **WS1 (P0)** — `pyproject.toml` (packaging + `penguin` entry point + `[dev]`),
+  GitHub Actions CI (ruff + pytest on 3.11/3.12 + smoke), tree made ruff-clean,
+  stale tests fixed, `.gitignore` no longer swallows `.github/`.
+- **WS5 (P1)** — self-learning loop closed: `learned.txt` now feeds brute-force
+  + permutation seeds.
+- **WS8.2 (P1)** — `critical_findings` notifications actually fire.
+- **WS2 (P0/P1)** — per-run `_tool_ledger.jsonl` + `_manifest.json`, shared
+  `diagnostics.py`, and `penguin diagnose <run_dir>`; `RUN_SUMMARY` log line.
+- **WS4 (P1)** — typed severity-ranked findings (`findings.py`, per-target
+  `findings.jsonl` with `first_seen_run`), rich Markdown + self-contained HTML
+  reports grouped by severity with a coverage section.
+- **WS8.1 (P1)** — subdomain-takeover detection (nuclei `http/takeovers/`) →
+  critical finding.
+- **WS7.2 (P2)** — `keep_runs` retention pruning of run dirs + history.
+
+**Still open:** WS3 (some parallelism already landed pre-plan), WS6 (proxy
+overhaul), WS7.1 resume/checkpoint, WS7.3 run-locking, WS8.3/8.4/8.5, WS9.
+
+---
+
+
 The plan is organized into **workstreams** (WS), each with concrete tasks,
 rationale, the files touched, and a rough effort tag (S/M/L). Priorities:
 
