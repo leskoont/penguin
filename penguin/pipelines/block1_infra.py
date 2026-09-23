@@ -80,7 +80,7 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
             partial(sd.crtsh, ctx, domain, sub_dir / f"crtsh_{domain}.txt"),
             partial(sd.amass_intel, ctx, domain.split(".")[0], sub_dir / f"amass_intel_{domain}.txt"),
         ]
-    run_parallel(passive_tasks, max_workers=cfg.general.max_parallel_tools,
+    run_parallel(passive_tasks, max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                  label="block1 passive enum")
 
     # ---- merge raw (stage 1: passive) ----
@@ -128,7 +128,7 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
             gen_tasks.append(partial(rs2.gotator, ctx, perms_in,
                                      sub_dir / "gotator_perms.txt", words))
         if gen_tasks:
-            run_parallel(gen_tasks, max_workers=cfg.general.max_parallel_tools,
+            run_parallel(gen_tasks, max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                          label="block1 permutation gen")
 
         if (sub_dir / "gotator_perms.txt").exists():

@@ -47,7 +47,7 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
         partial(og.censys_certs, ctx, domain, origin_dir / "censys_certs.json"),
         partial(og.cloudflair, ctx, domain, origin_dir / "cloudflair.txt"),
     ]
-    run_parallel(origin_tasks, max_workers=cfg.general.max_parallel_tools,
+    run_parallel(origin_tasks, max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                  label="block4 origin discovery")
 
     # ---- verify origin IP candidates found above (bypasses CDN if real) ----
@@ -98,7 +98,7 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
                 origin_dir / f"verify_{ip.replace('.', '_')}.txt")
         for ip in ordered_ips
     ]
-    run_parallel(verify_tasks, max_workers=cfg.general.max_parallel_tools,
+    run_parallel(verify_tasks, max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                  label="block4 origin verify")
     verified_ips = []
     for ip in ordered_ips:

@@ -40,6 +40,7 @@ class Proxy:
 class ProxyPool:
     def __init__(self, cfg: Config):
         self.cfg = cfg.proxies  # type: ProxyConfig
+        self._general = cfg.general  # for the global concurrency clamp
         self._lock = threading.Lock()
         self._pool: list[Proxy] = []
         self._idx = 0
@@ -141,8 +142,13 @@ class ProxyPool:
         # seconds on a network round-trip), so worker count -- not CPU --
         # is what bounds wall-clock time here. 50 workers against ~4000
         # candidates at a 5s timeout took ~7 minutes (3942/50*5s =~ 394s);
-        # a bigger pool cuts that roughly linearly.
-        ex = concurrent.futures.ThreadPoolExecutor(max_workers=self.cfg.validate_workers)
+        # a bigger pool cuts that roughly linearly. The worker count is the
+        # peak simultaneous-socket burst at startup, so it is clamped to the
+        # global concurrency ceiling (general.max_global_concurrency) -- this is
+        # the single biggest per-run burst and the one --throttle / minimal is
+        # meant to tame.
+        workers = self._general.clamp_workers(self.cfg.validate_workers)
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
         futs = {}
         try:
             futs = {ex.submit(self._validate_one, p, test_url, timeout): p for p in proxies}
