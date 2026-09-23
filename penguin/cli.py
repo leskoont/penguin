@@ -15,7 +15,13 @@ from .pipelines.report import build_report
 from .proxies import get_pool
 from .ui.console import console, setup_logging
 from .ui.progress import RichBlockProgress, refresh_proxy_pool
-from .ui.tables import install_check_table, summary_table, url_check_table
+from .ui.tables import (
+    install_check_table,
+    ledger_table,
+    sources_table,
+    summary_table,
+    url_check_table,
+)
 from .ui.targets import resolve_targets
 
 LOG = logging.getLogger("penguin")
@@ -298,6 +304,78 @@ def cmd_tui(
     from .ui.tui import PenguinTUI
 
     PenguinTUI(cfg, picked).run()
+    return 0
+
+
+@app.command("diagnose", help="explain a run from its ledger + manifest (no re-run)")
+def cmd_diagnose(
+    ctx: typer.Context,
+    run_dir: str = typer.Argument(..., help="path to a results/<target>/<run_id> dir"),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
+    no_venv: bool = typer.Option(False, "--no-venv", hidden=True),
+    reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
+) -> int:
+    from pathlib import Path
+
+    from . import diagnostics
+
+    rd = Path(run_dir)
+    if not rd.is_dir():
+        LOG.error("[diagnose] not a directory: %s", rd)
+        return 1
+
+    manifest = diagnostics.read_manifest(rd)
+    records = diagnostics.read_ledger(rd)
+    if manifest is None and not records:
+        LOG.error("[diagnose] no _manifest.json or _tool_ledger.jsonl in %s "
+                  "(is this a penguin run dir?)", rd)
+        return 1
+
+    if manifest:
+        net = manifest.get("net", {})
+        px = manifest.get("proxies", {})
+        console.print(
+            f"[bold]target[/] {manifest.get('target', {}).get('value', '?')}   "
+            f"[bold]profile[/] {net.get('profile', '?')}   "
+            f"[bold]duration[/] {manifest.get('duration_s', '?')}s   "
+            f"[bold]sha[/] {manifest.get('penguin_sha') or '?'}"
+        )
+        console.print(
+            f"[bold]stages[/] {manifest.get('stages', {})}   "
+            f"[bold]proxies[/] enabled={px.get('enabled')} pool={px.get('pool_size_at_start')}"
+        )
+        missing = [t for t, present in manifest.get("tools_present", {}).items() if not present]
+        if missing:
+            console.print(f"[red]missing tools[/]: {', '.join(missing)}")
+
+    roll = diagnostics.rollup(records) if records else manifest.get("ledger") if manifest else None
+    if roll and roll.get("totals", {}).get("calls"):
+        console.print(ledger_table(roll))
+        tot = roll["totals"]
+        flags = []
+        if tot.get("timeout"):
+            flags.append(f"{tot['timeout']} timeout")
+        if tot.get("missing"):
+            flags.append(f"{tot['missing']} missing-binary")
+        if tot.get("permanent") or tot.get("error"):
+            flags.append(f"{tot.get('permanent', 0) + tot.get('error', 0)} hard-fail")
+        if tot.get("skipped_no_proxy"):
+            flags.append(f"{tot['skipped_no_proxy']} skipped(no-proxy)")
+        if flags:
+            console.print("[yellow]attention[/]: " + ", ".join(flags))
+    else:
+        console.print("[dim]no tool-ledger records[/]")
+
+    sources = diagnostics.subdomain_sources(rd)
+    if sources:
+        console.print(sources_table(sources))
+        zero = [s for s, n in sources.items() if not n]
+        if zero:
+            console.print(f"[red]zero-output sources[/]: {', '.join(sorted(zero))}")
+
+    if manifest and manifest.get("summary"):
+        console.print(summary_table(manifest.get("target", {}).get("value", "?"),
+                                    manifest["summary"]))
     return 0
 
 
