@@ -95,6 +95,40 @@ straight through to the existing "no targets" error, unchanged).
 
 (You can also run `python -m penguin` directly from the project root.)
 
+## Network profiles (stabilize a lagging link)
+
+recon bursts can overrun a small NAT/conntrack table (VirtualBox SLIRP, a SOHO
+router, weak Wi-Fi) and make the **host's own** network lag or drop mid-run.
+Rather than hand-tuning six knobs (`threads`, `rate_limit`, `dns_rate_limit`,
+`max_parallel_tools`, `max_global_concurrency`, proxy `validate_workers`), pick
+one **network profile**:
+
+| Profile | Use when | Footprint |
+|---|---|---|
+| `minimal` / `throttle` | your own machine's network lags under a run | smallest (near-serial) |
+| `slirp` *(default)* | VirtualBox user-mode NAT | conservative (today's values) |
+| `wsl` | WSL2 / VMware NAT / wired bridge | moderate |
+| `vps` | dedicated host / datacenter | aggressive |
+
+```bash
+# smallest footprint — the fix for "my machine lags when I run scans"
+./penguin.sh run --target example.com --throttle
+# or pick a profile explicitly (per run, no config edit)
+./penguin.sh run --target example.com --net-profile wsl
+# or via env / config.yaml
+PENGUIN_NET_PROFILE=minimal ./penguin.sh run --target example.com
+```
+
+Selection priority: `--net-profile` / `--throttle` **>** `PENGUIN_NET_PROFILE`
+env **>** `general.net_profile` in `config.yaml` **>** built-in default
+(`slirp`). A profile is applied *before* your `config.yaml` values, so any knob
+you set by hand still wins over the profile.
+
+`general.max_global_concurrency` is the single hard cap on the *total* number of
+concurrent penguin-spawned network operations across **all** fan-out points
+(proxy validation + every block loop), so bursts can't stack past it. If a run
+still strains your link, lower that one number.
+
 ## Proxies (automatic every run)
 
 On every invocation penguin fetches both free proxy lists, dedups, validates
