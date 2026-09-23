@@ -14,7 +14,8 @@ class TestLoadConfig:
         """Loading nonexistent file returns default Config."""
         cfg = load("/nonexistent/path/config.yaml")
         assert cfg is not None
-        assert cfg.general.threads == 50
+        # Default net profile is the conservative "slirp" bundle.
+        assert cfg.general.threads == 15
         assert cfg.general.timeout == 30
         assert cfg.stages["infra"] is True
         assert cfg.stages["web"] is True
@@ -25,7 +26,7 @@ class TestLoadConfig:
             config_file = Path(tmpdir) / "config.yaml"
             config_file.write_text("", encoding="utf-8")
             cfg = load(config_file)
-            assert cfg.general.threads == 50
+            assert cfg.general.threads == 15
             assert cfg.general.timeout == 30
 
     def test_load_general_config(self):
