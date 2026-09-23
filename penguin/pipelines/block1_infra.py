@@ -88,7 +88,7 @@ def _extract_scoped(text: str, rx: "re.Pattern[str]") -> set[str]:
 
 
 def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
-    ctx = ToolContext(cfg)
+    ctx = ToolContext(cfg, run_dir=state.run_dir)
     results: dict = {"subdomains": [], "resolved": [], "live": []}
     if not cfg.stage_enabled("infra"):
         logger.info("[block1] disabled by config")

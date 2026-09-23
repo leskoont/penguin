@@ -3,11 +3,17 @@ wordlists, diffs against previous run and notifies on new assets.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
+import shutil
+import subprocess
 import threading
+import time
+from pathlib import Path
 from typing import Callable, Optional
 
+from .. import diagnostics
 from ..config import Config
 from ..notify import notify
 from ..state import ARTIFACTS, RunState
@@ -18,6 +24,59 @@ from .block3_cloud_db import run_block3
 from .block4_elite import run_block4
 
 logger = logging.getLogger("penguin.master")
+
+# Core tools whose presence is recorded in the run manifest (a missing binary is
+# the dominant silent cause of low result counts).
+_MANIFEST_TOOLS = (
+    "subfinder", "amass", "assetfinder", "findomain", "crtsh", "puredns", "dnsx",
+    "gotator", "httpx", "nuclei", "katana", "gau", "ffuf", "arjun",
+    "masscan", "nmap", "trufflehog", "gitleaks",
+)
+
+
+def _penguin_sha() -> Optional[str]:
+    """Best-effort short git SHA of the penguin checkout (None off-git)."""
+    try:
+        root = Path(__file__).resolve().parent.parent.parent
+        out = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=5)
+        sha = out.stdout.strip()
+        return sha or None
+    except Exception:  # noqa - manifest metadata must never break a run
+        return None
+
+
+def _write_manifest(cfg: Config, state: RunState, target: dict, summary: dict,
+                    started_at: float, proxy_pool_size: int) -> None:
+    """Write <run_dir>/_manifest.json: a redacted snapshot of what this run was
+    configured to do, plus rolled-up tool-ledger stats. Never raises."""
+    g = cfg.general
+    manifest = {
+        "target": target,
+        "run_dir": str(state.run_dir),
+        "penguin_sha": _penguin_sha(),
+        "started_at": started_at,
+        "ended_at": time.time(),
+        "duration_s": round(time.time() - started_at, 1),
+        "stages": dict(cfg.stages),
+        "net": {
+            "profile": g.net_profile,
+            "threads": g.threads,
+            "rate_limit": g.rate_limit,
+            "dns_rate_limit": g.dns_rate_limit,
+            "max_parallel_tools": g.max_parallel_tools,
+            "max_global_concurrency": g.max_global_concurrency,
+        },
+        "proxies": {"enabled": cfg.proxies.enabled, "pool_size_at_start": proxy_pool_size},
+        "tools_present": {t: shutil.which(t) is not None for t in _MANIFEST_TOOLS},
+        "summary": summary,
+        "ledger": diagnostics.rollup(diagnostics.read_ledger(state.run_dir)),
+    }
+    try:
+        (state.run_dir / diagnostics.MANIFEST_NAME).write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:  # noqa
+        logger.debug("[manifest] failed to write", exc_info=True)
 
 ProgressCb = Callable[[int, str, str], None]
 
@@ -92,8 +151,14 @@ def _run_block(cfg: Config, state: RunState, target: dict, progress_cb: Optional
 
 def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = None,
                cancel_event: Optional[threading.Event] = None) -> dict:
+    started_at = time.time()
     state = RunState(cfg, target["value"])
     logger.info("=== penguin run %s -> %s ===", target["value"], state.run_dir)
+    try:
+        from ..proxies import get_pool
+        proxy_pool_size = len(get_pool(cfg)) if cfg.proxies.enabled else 0
+    except Exception:  # noqa
+        proxy_pool_size = 0
 
     # Cancellation is checked between blocks (not mid-block -- individual
     # tool subprocesses can't be cleanly interrupted from here). Once the
@@ -190,5 +255,15 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "exposed_git": len(b4.get("exposed_git", [])),
         "secrets": len(b2.get("js_secrets", [])) + len(b4.get("secrets", [])),
     }
+
+    # Per-run manifest (config snapshot + tool presence + rolled-up ledger) so
+    # `penguin diagnose <run_dir>` can explain the run without log grepping.
+    try:
+        _write_manifest(cfg, state, target, summary, started_at, proxy_pool_size)
+    except Exception:  # noqa
+        logger.debug("[%s] manifest write failed", target["value"], exc_info=True)
+
     logger.info("=== done %s: %s ===", target["value"], summary)
+    # A single machine-parseable line so continuous-mode logs are greppable.
+    logger.info("RUN_SUMMARY %s", json.dumps(summary, ensure_ascii=False))
     return summary

@@ -21,7 +21,7 @@ DB_PORTS = pt.DB_PORTS
 
 
 def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
-    ctx = ToolContext(cfg)
+    ctx = ToolContext(cfg, run_dir=state.run_dir)
     results: dict = {"open_db": [], "buckets": []}
     if not cfg.stage_enabled("cloud_db"):
         logger.info("[block3] disabled by config")

@@ -23,7 +23,7 @@ def _sanitize_slug(s: str) -> str:
 
 
 def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
-    ctx = ToolContext(cfg)
+    ctx = ToolContext(cfg, run_dir=state.run_dir)
     results: dict = {"origin_ips": [], "exposed_git": [], "secrets": []}
     if not cfg.stage_enabled("elite"):
         logger.info("[block4] disabled by config")
