@@ -60,8 +60,10 @@ _TYPES = {
     "secret":        ("critical", "trufflehog/gitleaks"),
     "js_secret":     ("high",     "jsluice/SecretFinder"),
     "open_database": ("high",     "nmap/masscan"),
+    "cors_misconfig": ("high",    "webchecks"),
     "public_bucket": ("medium",   "s3scanner/cloud_enum"),
     "origin_ip":     ("medium",   "origin-bypass"),
+    "missing_security_headers": ("low", "webchecks"),
     "new_subdomain": ("info",     "diff"),
 }
 
@@ -88,6 +90,18 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
         out.append(_mk("new_subdomain", tv, host))
     for sec in b2.get("js_secrets", []):
         out.append(_mk("js_secret", tv, sec, evidence="JS analysis hit"))
+    for issue in b2.get("web_issues", []):
+        if not isinstance(issue, dict):
+            continue
+        url = issue.get("url", "")
+        if issue.get("cors_bad") or issue.get("cors_reflected"):
+            out.append(_mk("cors_misconfig", tv, url, url=url,
+                           evidence="reflects arbitrary Origin"
+                           + (" with credentials" if issue.get("cors_credentials") else "")))
+        missing = issue.get("missing") or []
+        if missing:
+            out.append(_mk("missing_security_headers", tv, url, url=url,
+                           evidence="missing: " + ", ".join(missing)))
     for db in b3.get("open_db", []):
         out.append(_mk("open_database", tv, db, evidence="open DB service artifact"))
     for bkt in b3.get("buckets", []):

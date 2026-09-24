@@ -31,7 +31,7 @@ def summary_table(target: str, summary: dict) -> Table:
     t.add_column("count", justify="right")
     for key in ("subdomains", "live", "endpoints", "js_secrets",
                 "open_db", "buckets", "new_subdomains", "exposed_git", "secrets",
-                "takeovers"):
+                "takeovers", "web_issues"):
         t.add_row(key, str(summary.get(key, 0)))
     return t
 
