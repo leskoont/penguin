@@ -15,6 +15,7 @@ from ..tools import content as ct
 from ..tools import nuclei_custom as nu
 from ..tools import probe as pb
 from ..tools import secrets as sc
+from ..tools import webchecks as wc
 from ..tools._base import ToolContext
 
 logger = logging.getLogger("penguin.block2")
@@ -127,7 +128,7 @@ def _select_hosts(hosts: list[str], max_hosts: Optional[int]) -> list[str]:
 
 def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     ctx = ToolContext(cfg, run_dir=state.run_dir)
-    results: dict = {"endpoints": [], "js_secrets": [], "api": []}
+    results: dict = {"endpoints": [], "js_secrets": [], "api": [], "web_issues": []}
     if not cfg.stage_enabled("web"):
         logger.info("[block2] disabled by config")
         return results
@@ -333,4 +334,13 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     if kite.exists():
         ap.kiterunner(ctx, hosts_file, kite, state.path("api/kiterunner.json"))
         results["api"].append("kiterunner")
+
+    # ---- CORS + security-header checks (one header request per host) ----
+    for issue in run_parallel([partial(wc.check_host, ctx, h) for h in limited_hosts],
+                              max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
+                              label="block2 web-misconfig checks"):
+        if issue:
+            results["web_issues"].append(issue)
+    if results["web_issues"]:
+        state.save_json("web_issues.json", results["web_issues"])
     return results

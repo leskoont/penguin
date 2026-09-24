@@ -43,6 +43,18 @@ class TestDerive:
         b1, b2, b3, b4 = _blocks()
         assert derive_findings(_TARGET, b1, b2, b3, b4, {"new": []}) == []
 
+    def test_web_issues_map_to_cors_and_header_findings(self):
+        b1, b2, b3, b4 = _blocks()
+        b2["web_issues"] = [
+            {"url": "https://a.ex.com", "cors_bad": True, "cors_credentials": True, "missing": []},
+            {"url": "https://b.ex.com", "cors_bad": False, "missing": ["content-security-policy"]},
+        ]
+        fs = derive_findings(_TARGET, b1, b2, b3, b4, {"new": []})
+        by = {f.type: f for f in fs}
+        assert by["cors_misconfig"].severity == "high"
+        assert "credentials" in by["cors_misconfig"].evidence
+        assert by["missing_security_headers"].severity == "low"
+
     def test_takeover_is_critical_finding(self):
         b1, b2, b3, b4 = _blocks()
         b1["takeovers"] = ["gone.ex.com"]
