@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import tempfile
+import threading
 from pathlib import Path
 
 from .config import Config
@@ -34,6 +35,9 @@ class WordlistManager:
             self.learned_file.write_text("", encoding="utf-8")
         # #84: cache learned words in memory to avoid O(n) re-read on every add()
         self._learned_cache = self._read()
+        # add() is a read-modify-write on the cache + file; serialize it so
+        # concurrent learners (run_parallel) don't drop each other's tokens.
+        self._lock = threading.RLock()
 
     def extract_nouns(self, text: str) -> set[str]:
         out = set()
@@ -60,6 +64,10 @@ class WordlistManager:
         return self.add(words)
 
     def add(self, words: set[str]) -> int:
+        with self._lock:
+            return self._add_locked(words)
+
+    def _add_locked(self, words: set[str]) -> int:
         # #84: use cached learned words instead of re-reading on every add()
         new = {w for w in words if w not in self._learned_cache}
         if new:
