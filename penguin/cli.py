@@ -141,6 +141,7 @@ def cmd_run(
     target: Optional[str] = typer.Option(None, "--target", help="target(s): a value, comma-list, a file, or '-' for stdin"),
     refresh_proxies: bool = typer.Option(False, "--refresh-proxies"),
     dry_run: bool = typer.Option(False, "--dry-run", help="print the planned targets/stages/profile and exit without scanning"),
+    active: bool = typer.Option(False, "--active", help="enable ACTIVE vuln scanning (dalfox XSS, nuclei DAST) -- authorized scope only"),
     resume: Optional[str] = typer.Option(None, "--resume", help="resume a crashed run dir (results/<target>/<run_id>), skipping completed blocks"),
     net_profile: Optional[str] = typer.Option(None, "--net-profile", help="network profile: minimal|slirp|wsl|vps (overrides config)"),
     throttle: bool = typer.Option(False, "--throttle", help="shortcut for --net-profile minimal (smallest network footprint)"),
@@ -155,7 +156,10 @@ def cmd_run(
 ) -> int:
     cfg_path, targets_path = _merge(ctx, verbose, config, targets)
     cfg = load(cfg_path, profile=_profile(net_profile, throttle))
-    LOG.info("[net] profile=%s max_global_concurrency=%d", cfg.general.net_profile, cfg.general.max_global_concurrency)
+    if active:
+        cfg.general.active = True
+    LOG.info("[net] profile=%s max_global_concurrency=%d active=%s",
+             cfg.general.net_profile, cfg.general.max_global_concurrency, cfg.general.active)
     from .state import LockHeld, TargetLock
 
     if resume:
@@ -317,7 +321,7 @@ def cmd_install_check(
              "feroxbuster", "katana", "gau", "waybackurls", "subjs", "arjun",
              "findomain", "masscan", "nmap", "cloud_enum", "trufflehog", "gitleaks",
              "gitdumper", "github-subdomains", "kr", "grpcurl", "trivy",
-             "gotator", "redis-cli", "aws", "dig", "dnsvalidator", "subzy",
+             "gotator", "redis-cli", "aws", "dig", "dnsvalidator", "subzy", "dalfox",
              "hakrawler", "paramspider", "x8", "s3scanner", "bucketloot", "jsluice",
              "SecretFinder", "gcpbucketbrute"]
     # Presence is a plain PATH lookup, not a "--help" probe: many of these

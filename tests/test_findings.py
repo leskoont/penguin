@@ -43,6 +43,13 @@ class TestDerive:
         b1, b2, b3, b4 = _blocks()
         assert derive_findings(_TARGET, b1, b2, b3, b4, {"new": []}) == []
 
+    def test_active_xss_finding(self):
+        b1, b2, b3, b4 = _blocks()
+        b2["active"] = ["https://x.com/?q=<script>"]
+        fs = derive_findings(_TARGET, b1, b2, b3, b4, {"new": []})
+        assert len(fs) == 1
+        assert fs[0].type == "xss" and fs[0].severity == "high"
+
     def test_web_issues_map_to_cors_and_header_findings(self):
         b1, b2, b3, b4 = _blocks()
         b2["web_issues"] = [
