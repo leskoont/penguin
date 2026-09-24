@@ -7,12 +7,15 @@ stored in the yaml file. Every paid integration is disabled by default.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Optional
 
 import yaml
+
+logger = logging.getLogger("penguin.config")
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = ROOT / "config" / "config.yaml"
@@ -349,16 +352,59 @@ class Config:
         return os.environ.get(env, "") if env else ""
 
 
-def _apply_section(obj: Any, data: dict) -> None:
+def _coerce_scalar(section: str, name: str, current: Any, val: Any) -> Any:
+    """Coerce a YAML scalar to the type of the field's current default, warning
+    (and keeping the default) when it cannot. Prevents silent config typos like
+    ``threads: "50 "`` or ``threads: abc`` from poisoning downstream int math.
+    ``None`` passes through (Optional[...] fields legitimately accept null)."""
+    if val is None or current is None:
+        return val
+    target = type(current)
+    # bool must be checked before int (bool is a subclass of int).
+    if isinstance(val, target) and not (target is int and isinstance(val, bool)):
+        return val
+    try:
+        if target is bool:
+            if isinstance(val, str):
+                low = val.strip().lower()
+                if low in ("true", "yes", "1", "on"):
+                    return True
+                if low in ("false", "no", "0", "off"):
+                    return False
+                raise ValueError(val)
+            return bool(val)
+        if target is int:
+            return int(str(val).strip())
+        if target is float:
+            return float(str(val).strip())
+        if target is str:
+            return str(val)
+    except (ValueError, TypeError):
+        pass
+    if isinstance(val, target):
+        return val
+    logger.warning("[config] %s.%s: cannot coerce %r to %s; keeping default %r",
+                   section, name, val, target.__name__, current)
+    return current
+
+
+def _apply_section(obj: Any, data: dict, section: str = "") -> None:
+    known = {f.name for f in fields(obj)}
+    for key in data:
+        if key not in known:
+            logger.warning("[config] unknown key %s.%s ignored",
+                           section or type(obj).__name__, key)
     for f in fields(obj):
         if f.name in data:
             val = data[f.name]
-            if isinstance(val, dict) and isinstance(getattr(obj, f.name), dict):
-                getattr(obj, f.name).update(val)
-            elif isinstance(val, dict) and hasattr(getattr(obj, f.name), "__dataclass_fields__"):
-                _apply_section(getattr(obj, f.name), val)
+            current = getattr(obj, f.name)
+            sub = f"{section}.{f.name}" if section else f.name
+            if isinstance(val, dict) and isinstance(current, dict):
+                current.update(val)
+            elif isinstance(val, dict) and hasattr(current, "__dataclass_fields__"):
+                _apply_section(current, val, sub)
             else:
-                setattr(obj, f.name, val)
+                setattr(obj, f.name, _coerce_scalar(section or type(obj).__name__, f.name, current, val))
 
 
 def load(config_path: str | Path | None = None, profile: str | None = None) -> Config:
@@ -402,17 +448,17 @@ def load(config_path: str | Path | None = None, profile: str | None = None) -> C
 
     if data:
         if "general" in data:
-            _apply_section(cfg.general, data["general"])
+            _apply_section(cfg.general, data["general"], "general")
         if "stages" in data:
             cfg.stages.update(data["stages"])
         if "tools" in data:
             cfg.tools.update(data["tools"])
         if "proxies" in data:
-            _apply_section(cfg.proxies, data["proxies"])
+            _apply_section(cfg.proxies, data["proxies"], "proxies")
         if "paid" in data:
             for name, svc in data["paid"].items():
                 if name in cfg.paid:
-                    _apply_section(cfg.paid[name], svc)
+                    _apply_section(cfg.paid[name], svc, f"paid.{name}")
                 else:
                     if isinstance(svc, dict):
                         # Filter to only known PaidService fields to avoid crashes on unknown YAML keys

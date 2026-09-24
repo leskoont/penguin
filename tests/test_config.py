@@ -411,3 +411,33 @@ class TestClampWorkers:
             g = prof.get("general", {})
             assert "max_global_concurrency" in g, name
             assert "max_parallel_tools" in g, name
+
+
+class TestConfigValidation:
+    """Schema validation: type coercion + unknown-key tolerance."""
+
+    def _load_yaml(self, tmp_path, body):
+        cf = Path(tmp_path) / "config.yaml"
+        cf.write_text(body, encoding="utf-8")
+        return load(cf)
+
+    def test_coerces_numeric_string(self, tmp_path):
+        cfg = self._load_yaml(tmp_path, "general:\n  threads: '40'\n")
+        assert cfg.general.threads == 40 and isinstance(cfg.general.threads, int)
+
+    def test_coerces_bool_string(self, tmp_path):
+        cfg = self._load_yaml(tmp_path, "general:\n  screenshots: 'yes'\n")
+        assert cfg.general.screenshots is True
+
+    def test_bad_int_keeps_default(self, tmp_path):
+        cfg = self._load_yaml(tmp_path, "general:\n  rate_limit: abc\n")
+        assert cfg.general.rate_limit == 100  # default preserved, no crash
+
+    def test_unknown_key_ignored_not_crash(self, tmp_path):
+        cfg = self._load_yaml(tmp_path, "general:\n  totally_made_up: 1\n  threads: 20\n")
+        assert cfg.general.threads == 20
+        assert not hasattr(cfg.general, "totally_made_up")
+
+    def test_null_passes_through_for_optional(self, tmp_path):
+        cfg = self._load_yaml(tmp_path, "general:\n  max_hosts_per_block: null\n")
+        assert cfg.general.max_hosts_per_block is None
