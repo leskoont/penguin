@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -98,6 +99,12 @@ class RunState:
         self.history_dir = self.base / "history"
         for d in (self.run_dir, self.history_dir):
             d.mkdir(parents=True, exist_ok=True)
+        # Guards add_lines' read-modify-write against concurrent callers: the
+        # temp-file+rename below is atomic against corruption but NOT against
+        # lost updates -- two threads that both read the accumulator, then both
+        # rename, silently drop one side's new lines. Blocks fan out with
+        # run_parallel, so serialize the RMW per RunState.
+        self._write_lock = threading.RLock()
 
     # ---- paths ----
     def path(self, *parts: str, run: bool = True) -> Path:
@@ -120,6 +127,10 @@ class RunState:
         when accumulate=False, returns count of lines new to this run.
         """
         lines = {self._norm(l) for l in lines if l and str(l).strip()}
+        with self._write_lock:
+            return self._add_lines_locked(filename, lines, accumulate)
+
+    def _add_lines_locked(self, filename: str, lines: set, accumulate: bool) -> int:
         new_to_accumulator = lines  # default if accumulate=False
         if accumulate:
             acc = self.base / filename

@@ -52,6 +52,8 @@ def parse_nuclei_takeovers(out: Path) -> list[str]:
             row = json.loads(line)
         except (ValueError, TypeError):
             continue
+        if not isinstance(row, dict):
+            continue  # a valid-JSON but non-object line (list/str/number)
         asset = row.get("host") or row.get("matched-at") or row.get("matched_at")
         if asset and asset not in seen:
             seen.add(asset)

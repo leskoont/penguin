@@ -33,10 +33,13 @@ def read_ledger(run_dir: Path) -> list[dict]:
         if not line:
             continue
         try:
-            records.append(json.loads(line))
+            rec = json.loads(line)
         except (ValueError, TypeError):
             # A torn last line (crash mid-write) must not sink the whole report.
             logger.debug("[diagnostics] skipping malformed ledger line")
+            continue
+        if isinstance(rec, dict):  # ignore valid-JSON-but-non-object lines
+            records.append(rec)
     return records
 
 
@@ -83,9 +86,10 @@ def read_manifest(run_dir: Path) -> Optional[dict]:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+        data = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
     except (ValueError, TypeError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def subdomain_sources(run_dir: Path) -> dict[str, int]:

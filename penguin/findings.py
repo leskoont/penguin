@@ -128,9 +128,12 @@ class FindingStore:
             if not line:
                 continue
             try:
-                f = Finding.from_dict(json.loads(line))
+                d = json.loads(line)
             except (ValueError, TypeError):
                 continue
+            if not isinstance(d, dict):
+                continue
+            f = Finding.from_dict(d)
             self._by_key[f.key()] = f
 
     def record(self, findings: list[Finding], run_id: str) -> tuple[list[Finding], list[Finding]]:
