@@ -7,17 +7,110 @@ so each run can be diffed against the previous one.
 from __future__ import annotations
 
 import json
+import logging
+import os
 import shutil
 import tempfile
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
 from .config import Config
 
+logger = logging.getLogger("penguin.state")
+
 
 def _now() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+
+class LockHeld(Exception):
+    """Raised when a target is already being scanned by a live process."""
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists but owned by another user
+    except OSError:
+        return False
+    return True
+
+
+class TargetLock:
+    """Cross-process advisory lock so a continuous daemon and a manual run don't
+    scan the same target at once (their accumulator/history writes would
+    interleave across processes, where the in-process RunState lock can't help).
+
+    Best-effort: a stale lock (holder dead, or older than ``ttl`` as a
+    cross-machine backstop where a pid is meaningless) is stolen rather than
+    blocking forever. Use as a context manager; raises LockHeld if a live
+    holder owns it."""
+
+    def __init__(self, cfg: Config, target: str, *, ttl: float = 86400.0):
+        base = cfg.path(cfg.general.output_dir, target)
+        base.mkdir(parents=True, exist_ok=True)
+        self.path = base / ".lock"
+        self.ttl = ttl
+        self._acquired = False
+
+    def acquire(self) -> "TargetLock":
+        if self._steal_if_stale():
+            pass
+        try:
+            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            info = self._read()
+            raise LockHeld(f"target locked by pid {info.get('pid')} since "
+                           f"{info.get('ts')} ({self.path})")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"pid": os.getpid(), "ts": time.time()}, fh)
+        self._acquired = True
+        return self
+
+    def _read(self) -> dict:
+        try:
+            return json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _steal_if_stale(self) -> bool:
+        if not self.path.exists():
+            return False
+        info = self._read()
+        pid = int(info.get("pid", 0) or 0)
+        ts = float(info.get("ts", 0) or 0)
+        dead = not _pid_alive(pid)
+        expired = (time.time() - ts) > self.ttl if ts else True
+        if dead or expired:
+            logger.warning("[lock] stealing stale lock %s (pid=%s dead=%s expired=%s)",
+                           self.path, pid, dead, expired)
+            try:
+                self.path.unlink()
+            except OSError:
+                pass
+            return True
+        return False
+
+    def release(self) -> None:
+        if self._acquired:
+            try:
+                self.path.unlink()
+            except OSError:
+                pass
+            self._acquired = False
+
+    def __enter__(self) -> "TargetLock":
+        return self.acquire()
+
+    def __exit__(self, *exc) -> None:
+        self.release()
 
 
 class Artifacts:

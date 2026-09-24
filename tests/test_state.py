@@ -411,3 +411,51 @@ class TestPruneHistory:
         base = Path(temp_dir) / "ex.com"
         kept = sorted(d.name for d in base.iterdir() if d.is_dir() and d.name != "history")
         assert kept == sorted(ids[-3:])
+
+
+class TestTargetLock:
+    """Cross-process advisory lock."""
+
+    @pytest.fixture
+    def cfg(self):
+        d = tempfile.mkdtemp()
+        c = Config()
+        c.general.output_dir = d
+        yield c
+        shutil.rmtree(d, ignore_errors=True)
+
+    def test_acquire_and_release(self, cfg):
+        from penguin.state import TargetLock
+        lock = TargetLock(cfg, "ex.com")
+        with lock:
+            assert lock.path.exists()
+        assert not lock.path.exists()
+
+    def test_second_acquire_raises_lockheld(self, cfg):
+        from penguin.state import LockHeld, TargetLock
+        with TargetLock(cfg, "ex.com"):
+            with pytest.raises(LockHeld):
+                TargetLock(cfg, "ex.com").acquire()
+
+    def test_stale_dead_pid_is_stolen(self, cfg):
+        import json
+
+        from penguin.state import TargetLock
+        lk = TargetLock(cfg, "ex.com")
+        lk.path.parent.mkdir(parents=True, exist_ok=True)
+        # a lock owned by a definitely-dead pid
+        lk.path.write_text(json.dumps({"pid": 999999999, "ts": 1}), encoding="utf-8")
+        with TargetLock(cfg, "ex.com"):  # should steal, not raise
+            pass
+
+    def test_expired_ttl_is_stolen(self, cfg):
+        import json
+        import os
+
+        from penguin.state import TargetLock
+        lk = TargetLock(cfg, "ex.com", ttl=0.0)
+        lk.path.parent.mkdir(parents=True, exist_ok=True)
+        # current live pid but ttl=0 -> considered expired
+        lk.path.write_text(json.dumps({"pid": os.getpid(), "ts": 1}), encoding="utf-8")
+        with TargetLock(cfg, "ex.com", ttl=0.0):
+            pass
