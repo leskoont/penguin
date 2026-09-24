@@ -90,11 +90,57 @@ def _top(
         raise typer.Exit(0)
 
 
+def _run_resume(cfg, resume_dir: str, refresh_proxies: bool) -> int:
+    """Resume a crashed run dir: results/<target>/<run_id>. Recovers the target
+    from _run_meta.json (falling back to the parent dir name) and re-runs into
+    the same dir, skipping blocks that already checkpointed."""
+    import json
+    from pathlib import Path
+
+    from .state import LockHeld, TargetLock
+
+    rd = Path(resume_dir)
+    if not rd.is_dir():
+        LOG.error("[resume] not a directory: %s", rd)
+        return 1
+    run_id = rd.name
+    target_value = rd.parent.name
+    target = {"type": "domain", "value": target_value}
+    meta = rd / "_run_meta.json"
+    if meta.exists():
+        try:
+            data = json.loads(meta.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and isinstance(data.get("target"), dict):
+                target = data["target"]
+                target_value = target.get("value", target_value)
+        except (ValueError, OSError):
+            LOG.warning("[resume] unreadable _run_meta.json; using dir name as target")
+
+    pool = get_pool(cfg)
+    if cfg.proxies.enabled:
+        refresh_proxy_pool(pool, console, force=refresh_proxies)
+    LOG.info("[resume] %s (run_id=%s)", target_value, run_id)
+    try:
+        with TargetLock(cfg, target_value):
+            with RichBlockProgress(console) as bp:
+                summary = run_target(cfg, target, progress_cb=bp.callback, resume_run_id=run_id)
+            console.print(summary_table(target_value, summary))
+            build_report(cfg, target, summary)
+    except LockHeld as exc:
+        LOG.warning("[resume] %s already running elsewhere; aborting (%s)", target_value, exc)
+        return 1
+    except Exception as exc:  # noqa
+        LOG.exception("[resume] %s failed: %s", target_value, exc)
+        return 1
+    return 0
+
+
 @app.command("run", help="run full pipeline (drops into an interactive wizard if no target resolves and stdin is a TTY)")
 def cmd_run(
     ctx: typer.Context,
     target: Optional[str] = typer.Option(None, "--target", help="single domain to scan"),
     refresh_proxies: bool = typer.Option(False, "--refresh-proxies"),
+    resume: Optional[str] = typer.Option(None, "--resume", help="resume a crashed run dir (results/<target>/<run_id>), skipping completed blocks"),
     net_profile: Optional[str] = typer.Option(None, "--net-profile", help="network profile: minimal|slirp|wsl|vps (overrides config)"),
     throttle: bool = typer.Option(False, "--throttle", help="shortcut for --net-profile minimal (smallest network footprint)"),
     # NOTE: -v, -c, -t duplicated on every subcommand because typer does not merge
@@ -109,6 +155,11 @@ def cmd_run(
     cfg_path, targets_path = _merge(ctx, verbose, config, targets)
     cfg = load(cfg_path, profile=_profile(net_profile, throttle))
     LOG.info("[net] profile=%s max_global_concurrency=%d", cfg.general.net_profile, cfg.general.max_global_concurrency)
+    from .state import LockHeld, TargetLock
+
+    if resume:
+        return _run_resume(cfg, resume, refresh_proxies)
+
     pool = get_pool(cfg)
     if cfg.proxies.enabled:
         valid = refresh_proxy_pool(pool, console, force=refresh_proxies)
@@ -117,7 +168,6 @@ def cmd_run(
     if not resolved:
         LOG.error("no targets; pass --target or populate config/targets.txt")
         return 1
-    from .state import LockHeld, TargetLock
 
     had_failure = False
     for t in resolved:

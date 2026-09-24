@@ -174,20 +174,24 @@ def read_live_urls(csv_file: Path) -> list[str]:
 
 
 class RunState:
-    def __init__(self, cfg: Config, target: str):
+    def __init__(self, cfg: Config, target: str, run_id: str | None = None):
         self.cfg = cfg
         self.target = target
-        base_ts = _now()
-        self.run_id = base_ts
         self.base = cfg.path(cfg.general.output_dir, target)
-        self.run_dir = self.base / self.run_id
-
-        # Collision guard: if run_dir already exists, append a counter
-        counter = 0
-        while self.run_dir.exists():
-            counter += 1
-            self.run_id = f"{base_ts}_{counter}"
+        if run_id:
+            # Resume: reuse an existing run dir verbatim (no collision bump).
+            self.run_id = run_id
+            self.run_dir = self.base / run_id
+        else:
+            base_ts = _now()
+            self.run_id = base_ts
             self.run_dir = self.base / self.run_id
+            # Collision guard: if run_dir already exists, append a counter
+            counter = 0
+            while self.run_dir.exists():
+                counter += 1
+                self.run_id = f"{base_ts}_{counter}"
+                self.run_dir = self.base / self.run_id
 
         self.history_dir = self.base / "history"
         for d in (self.run_dir, self.history_dir):

@@ -127,8 +127,12 @@ def _emit(cb: Optional[ProgressCb], block_num: int, name: str, phase: str) -> No
         logger.debug("progress_cb raised", exc_info=True)
 
 
+def _checkpoint_path(state: RunState, block_num: int) -> Path:
+    return state.run_dir / f"_block{block_num}_result.json"
+
+
 def _run_block(cfg: Config, state: RunState, target: dict, progress_cb: Optional[ProgressCb],
-               block_num: int, name: str, run_fn) -> dict:
+               block_num: int, name: str, run_fn, *, resume: bool = False) -> dict:
     """Run one recon block in isolation.
 
     `run_parallel` already isolates individual *task* failures inside a
@@ -138,23 +142,58 @@ def _run_block(cfg: Config, state: RunState, target: dict, progress_cb: Optional
     remaining block plus diff/notify/archive/report. Catch it here, log it,
     and degrade to that block's own empty-result shape so the rest of
     `run_target` (and the caller) sees a valid, if partial, result.
+
+    When ``resume`` is set and a completed checkpoint exists for this block,
+    load it instead of re-running (idempotent resume after a crash). The result
+    dict is checkpointed to ``_block<N>_result.json`` after a successful run so a
+    later --resume can skip it.
     """
+    ckpt = _checkpoint_path(state, block_num)
+    if resume and ckpt.exists():
+        try:
+            data = json.loads(ckpt.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                logger.info("[block%d:%s] resume: using checkpoint (skipping)", block_num, name)
+                _emit(progress_cb, block_num, name, "done")
+                return data
+        except (ValueError, OSError):
+            logger.warning("[block%d:%s] resume: bad checkpoint, re-running", block_num, name)
+
     _emit(progress_cb, block_num, name, "start")
+    completed = True
     try:
         result = run_fn(cfg, state, target)
     except Exception:
         logger.exception("[block%d:%s] %s unhandled exception -- degrading to empty result",
                           block_num, name, target["value"])
         result = {k: list(v) for k, v in _BLOCK_FALLBACKS[block_num].items()}
+        completed = False
+    # Only checkpoint a genuinely completed block, so --resume never skips a
+    # block that degraded to an empty result.
+    if completed:
+        try:
+            ckpt.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+        except (TypeError, OSError):
+            logger.debug("[block%d:%s] checkpoint write failed", block_num, name, exc_info=True)
     _emit(progress_cb, block_num, name, "done")
     return result
 
 
 def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = None,
-               cancel_event: Optional[threading.Event] = None) -> dict:
+               cancel_event: Optional[threading.Event] = None,
+               resume_run_id: Optional[str] = None) -> dict:
     started_at = time.time()
-    state = RunState(cfg, target["value"])
-    logger.info("=== penguin run %s -> %s ===", target["value"], state.run_dir)
+    resume = bool(resume_run_id)
+    state = RunState(cfg, target["value"], run_id=resume_run_id)
+    logger.info("=== penguin run%s %s -> %s ===", " (resume)" if resume else "",
+                target["value"], state.run_dir)
+    # Persist the target dict at run start so --resume can recover it even if the
+    # crashed run never reached the manifest (which is written at the end).
+    try:
+        (state.run_dir / "_run_meta.json").write_text(
+            json.dumps({"target": target}, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
     try:
         from ..proxies import get_pool
         proxy_pool_size = len(get_pool(cfg)) if cfg.proxies.enabled else 0
@@ -173,7 +212,8 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
             logger.info("[%s] cancellation requested -- stopping before block%d:%s",
                         target["value"], block_num, name)
             break
-        results[block_num] = _run_block(cfg, state, target, progress_cb, block_num, name, run_fn)
+        results[block_num] = _run_block(cfg, state, target, progress_cb, block_num, name, run_fn,
+                                        resume=resume)
     for block_num, _name, _run_fn in _BLOCKS:
         results.setdefault(block_num, {k: list(v) for k, v in _BLOCK_FALLBACKS[block_num].items()})
     b1, b2, b3, b4 = results[1], results[2], results[3], results[4]

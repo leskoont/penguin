@@ -89,6 +89,9 @@ penguin.bat run --target example.com          # Windows cmd
 
 # explain a finished run (per-tool outcomes, zero-output sources, timeouts)
 ./penguin.sh diagnose results/example.com/<run_id>
+
+# resume a crashed run, skipping blocks that already completed
+./penguin.sh run --resume results/example.com/<run_id>
 ```
 
 If `penguin run` is invoked with no `--target` and `config/targets.txt` is
