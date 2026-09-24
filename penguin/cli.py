@@ -117,13 +117,18 @@ def cmd_run(
     if not resolved:
         LOG.error("no targets; pass --target or populate config/targets.txt")
         return 1
+    from .state import LockHeld, TargetLock
+
     had_failure = False
     for t in resolved:
         try:
-            with RichBlockProgress(console) as bp:
-                summary = run_target(cfg, t, progress_cb=bp.callback)
-            console.print(summary_table(t["value"], summary))
-            build_report(cfg, t, summary)
+            with TargetLock(cfg, t["value"]):
+                with RichBlockProgress(console) as bp:
+                    summary = run_target(cfg, t, progress_cb=bp.callback)
+                console.print(summary_table(t["value"], summary))
+                build_report(cfg, t, summary)
+        except LockHeld as exc:
+            LOG.warning("[run] %s already running elsewhere; skipping (%s)", t["value"], exc)
         except Exception as exc:  # noqa - one target's failure must not abort the batch
             LOG.exception("target %s failed: %s", t["value"], exc)
             had_failure = True
@@ -149,6 +154,8 @@ def cmd_continuous(
     if not resolved:
         LOG.error("no targets for continuous mode")
         return 1
+    from .state import LockHeld, TargetLock
+
     interval_s = _parse_interval(cfg.continuous.interval if not interval else interval)
     LOG.info("[continuous] every %ds across %d targets", interval_s, len(resolved))
     while True:
@@ -157,8 +164,12 @@ def cmd_continuous(
             refresh_proxy_pool(pool, console, force=True)
         for t in resolved:
             try:
-                summary = run_target(cfg, t)
-                build_report(cfg, t, summary)
+                with TargetLock(cfg, t["value"]):
+                    summary = run_target(cfg, t)
+                    build_report(cfg, t, summary)
+            except LockHeld as exc:
+                LOG.warning("[continuous] %s already running elsewhere; skipping (%s)",
+                            t["value"], exc)
             except Exception as exc:  # noqa
                 LOG.exception("target %s failed: %s", t["value"], exc)
         LOG.info("[continuous] sleeping %ds", interval_s)
