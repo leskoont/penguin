@@ -28,10 +28,19 @@ Delivered since the plan was written (each as its own commit, suite green):
   reports grouped by severity with a coverage section.
 - **WS8.1 (P1)** — subdomain-takeover detection (nuclei `http/takeovers/`) →
   critical finding.
-- **WS7.2 (P2)** — `keep_runs` retention pruning of run dirs + history.
+- **WS7 (P2)** — resume/checkpoint (`--resume`, per-block result checkpoints),
+  `keep_runs` retention pruning, and per-target cross-process run-locking.
+- **WS9.1 (P2)** — config schema validation: scalar type coercion + unknown-key
+  warnings on load.
+- **Hardening** — hellish stress suite (`tests/test_stress.py`) that found and
+  fixed real bugs: a data-loss RMW race in `RunState.add_lines` and
+  `WordlistManager.add` (now RLock-guarded), and non-dict-JSON crashes in the
+  takeover/ledger/manifest/findings parsers.
 
 **Still open:** WS3 (some parallelism already landed pre-plan), WS6 (proxy
-overhaul), WS7.1 resume/checkpoint, WS7.3 run-locking, WS8.3/8.4/8.5, WS9.
+overhaul), WS8.3 (CORS/security-header checks), WS8.4 (opt-in active vuln
+tools), WS8.5 (paid-source enrichment), WS9.2–9.4 (dry-run, Windows story,
+multi-target input).
 
 ---
 
