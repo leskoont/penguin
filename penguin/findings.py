@@ -60,6 +60,7 @@ _TYPES = {
     "secret":        ("critical", "trufflehog/gitleaks"),
     "js_secret":     ("high",     "jsluice/SecretFinder"),
     "open_database": ("high",     "nmap/masscan"),
+    "xss": ("high",               "dalfox"),
     "cors_misconfig": ("high",    "webchecks"),
     "public_bucket": ("medium",   "s3scanner/cloud_enum"),
     "origin_ip":     ("medium",   "origin-bypass"),
@@ -90,6 +91,8 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
         out.append(_mk("new_subdomain", tv, host))
     for sec in b2.get("js_secrets", []):
         out.append(_mk("js_secret", tv, sec, evidence="JS analysis hit"))
+    for url in b2.get("active", []):
+        out.append(_mk("xss", tv, url, url=str(url), evidence="dalfox active XSS"))
     for issue in b2.get("web_issues", []):
         if not isinstance(issue, dict):
             continue

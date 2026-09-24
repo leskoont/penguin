@@ -87,7 +87,7 @@ ProgressCb = Callable[[int, str, str], None]
 # KeyError on a failed block.
 _BLOCK_FALLBACKS: dict[int, dict] = {
     1: {"subdomains": [], "resolved": [], "live": [], "takeovers": []},
-    2: {"endpoints": [], "js_secrets": [], "api": [], "web_issues": []},
+    2: {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [], "active": []},
     3: {"open_db": [], "buckets": []},
     4: {"origin_ips": [], "exposed_git": [], "secrets": []},
 }
@@ -117,6 +117,7 @@ def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict) -> dict[str, int]
         "exposed .git": len(b4.get("exposed_git", [])),
         "public buckets": len(b3.get("buckets", [])),
         "CORS misconfigs": cors,
+        "active XSS": len(b2.get("active", [])),
     }
     return {k: n for k, n in categories.items() if n}
 
@@ -300,6 +301,7 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "secrets": len(b2.get("js_secrets", [])) + len(b4.get("secrets", [])),
         "takeovers": len(b1.get("takeovers", [])),
         "web_issues": len(b2.get("web_issues", [])),
+        "active_xss": len(b2.get("active", [])),
     }
 
     # Typed, severity-ranked findings, accumulated per target with a

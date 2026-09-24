@@ -10,6 +10,7 @@ from typing import Optional
 from ..config import Config
 from ..parallel import run_parallel
 from ..state import ARTIFACTS, RunState, read_live_urls
+from ..tools import active as av
 from ..tools import api as ap
 from ..tools import content as ct
 from ..tools import nuclei_custom as nu
@@ -128,7 +129,7 @@ def _select_hosts(hosts: list[str], max_hosts: Optional[int]) -> list[str]:
 
 def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     ctx = ToolContext(cfg, run_dir=state.run_dir)
-    results: dict = {"endpoints": [], "js_secrets": [], "api": [], "web_issues": []}
+    results: dict = {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [], "active": []}
     if not cfg.stage_enabled("web"):
         logger.info("[block2] disabled by config")
         return results
@@ -343,4 +344,26 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
             results["web_issues"].append(issue)
     if results["web_issues"]:
         state.save_json("web_issues.json", results["web_issues"])
+
+    # ---- ACTIVE scanning (opt-in, --active only) ----
+    if cfg.general.active:
+        logger.warning("[block2] ACTIVE scanning enabled -- sending payloads to target "
+                       "(authorized scope only)")
+        # Collect parameterized URLs (contain '?') discovered during JS/param crawl.
+        param_urls = sorted({
+            ln.strip() for f in js_dir.glob("*.txt")
+            for ln in f.read_text(encoding="utf-8", errors="ignore").splitlines()
+            if "?" in ln and ln.strip().startswith(("http://", "https://"))
+        })
+        if param_urls:
+            params_file = state.path("active/param_urls.txt")
+            params_file.write_text("\n".join(param_urls) + "\n", encoding="utf-8")
+            dalfox_out = state.path("active/dalfox.jsonl")
+            if av.dalfox_file(ctx, params_file, dalfox_out):
+                results["active"].extend(av.parse_dalfox(dalfox_out))
+        else:
+            logger.info("[block2] active: no parameterized URLs found for dalfox")
+        av.nuclei_fuzz(ctx, hosts_file, state.path("active/nuclei_dast.jsonl"))
+        if results["active"]:
+            state.save_json("active_findings.json", results["active"])
     return results

@@ -95,6 +95,12 @@ class GeneralConfig:
     #   wsl                -> WSL2 / VMware NAT / wired bridge
     #   vps                -> dedicated host / datacenter (old aggressive)
     net_profile: str = "slirp"
+    # Active/intrusive scanning master switch. OFF by default: penguin's default
+    # posture is passive/low-touch. When enabled (CLI --active), block2 also runs
+    # opt-in active vuln tools (dalfox XSS on discovered params, nuclei fuzzing
+    # templates) that send crafted payloads to the target -- only ever use this
+    # in authorized scope.
+    active: bool = False
     # SLIRP-SAFE PROFILE. The real bottleneck turned out to be VirtualBox's
     # user-mode NAT (SLIRP, the 10.0.2.15 gateway): it keeps a tiny concurrent
     # socket table and collapses the *whole* VM link when a recon burst exceeds
