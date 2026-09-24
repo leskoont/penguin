@@ -138,8 +138,9 @@ def _run_resume(cfg, resume_dir: str, refresh_proxies: bool) -> int:
 @app.command("run", help="run full pipeline (drops into an interactive wizard if no target resolves and stdin is a TTY)")
 def cmd_run(
     ctx: typer.Context,
-    target: Optional[str] = typer.Option(None, "--target", help="single domain to scan"),
+    target: Optional[str] = typer.Option(None, "--target", help="target(s): a value, comma-list, a file, or '-' for stdin"),
     refresh_proxies: bool = typer.Option(False, "--refresh-proxies"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print the planned targets/stages/profile and exit without scanning"),
     resume: Optional[str] = typer.Option(None, "--resume", help="resume a crashed run dir (results/<target>/<run_id>), skipping completed blocks"),
     net_profile: Optional[str] = typer.Option(None, "--net-profile", help="network profile: minimal|slirp|wsl|vps (overrides config)"),
     throttle: bool = typer.Option(False, "--throttle", help="shortcut for --net-profile minimal (smallest network footprint)"),
@@ -160,14 +161,27 @@ def cmd_run(
     if resume:
         return _run_resume(cfg, resume, refresh_proxies)
 
+    resolved = resolve_targets(cfg, targets_path, target, allow_wizard=not dry_run)
+    if not resolved:
+        LOG.error("no targets; pass --target or populate config/targets.txt")
+        return 1
+
+    if dry_run:
+        stages = [n for n in ("infra", "web", "cloud_db", "elite") if cfg.stage_enabled(n)]
+        console.print(f"[bold]DRY RUN[/] — net profile [cyan]{cfg.general.net_profile}[/] "
+                      f"(max_global_concurrency={cfg.general.max_global_concurrency}, "
+                      f"proxies={'on' if cfg.proxies.enabled else 'off'})")
+        console.print(f"[bold]stages[/]: {', '.join(stages) or '(none enabled)'}")
+        console.print(f"[bold]targets[/] ({len(resolved)}):")
+        for t in resolved:
+            console.print(f"  - {t['type']}: {t['value']}")
+        console.print("[dim]no scanning performed[/]")
+        return 0
+
     pool = get_pool(cfg)
     if cfg.proxies.enabled:
         valid = refresh_proxy_pool(pool, console, force=refresh_proxies)
         LOG.info("[proxies] %d valid proxies in pool", len(valid))
-    resolved = resolve_targets(cfg, targets_path, target)
-    if not resolved:
-        LOG.error("no targets; pass --target or populate config/targets.txt")
-        return 1
 
     had_failure = False
     for t in resolved:

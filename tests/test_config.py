@@ -441,3 +441,43 @@ class TestConfigValidation:
     def test_null_passes_through_for_optional(self, tmp_path):
         cfg = self._load_yaml(tmp_path, "general:\n  max_hosts_per_block: null\n")
         assert cfg.general.max_hosts_per_block is None
+
+
+class TestParseTargetToken:
+    def test_bare_domain(self):
+        from penguin.config import parse_target_token
+        assert parse_target_token("example.com") == {"type": "domain", "value": "example.com"}
+
+    def test_prefix_types(self):
+        from penguin.config import parse_target_token
+        assert parse_target_token("asn:AS13335") == {"type": "asn", "value": "AS13335"}
+        assert parse_target_token("url:https://x/y") == {"type": "url", "value": "https://x/y"}
+
+    def test_url_autodetect(self):
+        from penguin.config import parse_target_token
+        assert parse_target_token("https://a.com/app")["type"] == "url"
+
+    def test_blank_and_comment(self):
+        from penguin.config import parse_target_token
+        assert parse_target_token("") is None
+        assert parse_target_token("   ") is None
+        assert parse_target_token("# note") is None
+
+
+class TestExpandTargetOpt:
+    def test_comma_list_dedup(self):
+        from penguin.ui.targets import _expand_target_opt
+        out = _expand_target_opt("a.com, b.com ,a.com,url:https://c/d")
+        vals = [t["value"] for t in out]
+        assert vals == ["a.com", "b.com", "https://c/d"]
+
+    def test_file_input(self, tmp_path):
+        from penguin.ui.targets import _expand_target_opt
+        f = tmp_path / "t.txt"
+        f.write_text("a.com\n# c\nasn:AS1\n\n", encoding="utf-8")
+        out = _expand_target_opt(str(f))
+        assert [t["type"] for t in out] == ["domain", "asn"]
+
+    def test_single_value(self):
+        from penguin.ui.targets import _expand_target_opt
+        assert _expand_target_opt("only.com") == [{"type": "domain", "value": "only.com"}]

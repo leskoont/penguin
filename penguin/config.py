@@ -492,30 +492,36 @@ def load(config_path: str | Path | None = None, profile: str | None = None) -> C
     return cfg
 
 
-def load_targets(targets_file: str | Path | None = None) -> list[dict]:
-    """Parse targets.txt. Each non-comment line: ``<type>:<value>`` or bare ``<value>``.
+def parse_target_token(line: str) -> Optional[dict]:
+    """Parse a single target token into ``{"type","value"}`` (or None for blank/
+    comment lines). Shared by load_targets and the CLI's --target expansion so
+    prefix/URL detection stays consistent everywhere.
 
     type is one of: domain, asn, cidr, org, url. Default type = domain.
-    Bare URLs (starting with http://, https://, or containing ://) are auto-detected.
+    Bare URLs (http://, https://, or containing ://) are auto-detected.
     """
+    line = line.strip()
+    if not line or line.startswith("#"):
+        return None
+    # #89: explicit type prefix
+    if ":" in line:
+        prefix, value = line.split(":", 1)
+        if prefix in ("domain", "asn", "cidr", "org", "url"):
+            return {"type": prefix, "value": value.strip()}
+    # #89: auto-detect URLs
+    if line.startswith(("http://", "https://")) or "://" in line:
+        return {"type": "url", "value": line}
+    return {"type": "domain", "value": line}
+
+
+def load_targets(targets_file: str | Path | None = None) -> list[dict]:
+    """Parse targets.txt. Each non-comment line: ``<type>:<value>`` or bare ``<value>``."""
     path = Path(targets_file) if targets_file else (ROOT / "config" / "targets.txt")
     targets: list[dict] = []
     if not path.exists():
         return targets
     for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        # #89: Check for explicit type prefix
-        if ":" in line:
-            prefix, value = line.split(":", 1)
-            if prefix in ("domain", "asn", "cidr", "org", "url"):
-                targets.append({"type": prefix, "value": value.strip()})
-                continue
-        # #89: Auto-detect URLs (http://, https://, or any string containing ://)
-        if line.startswith(("http://", "https://")) or "://" in line:
-            targets.append({"type": "url", "value": line})
-        else:
-            # Default to domain for bare values
-            targets.append({"type": "domain", "value": line})
+        t = parse_target_token(line)
+        if t:
+            targets.append(t)
     return targets
