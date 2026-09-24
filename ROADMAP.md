@@ -32,15 +32,21 @@ Delivered since the plan was written (each as its own commit, suite green):
   `keep_runs` retention pruning, and per-target cross-process run-locking.
 - **WS9.1 (P2)** — config schema validation: scalar type coercion + unknown-key
   warnings on load.
+- **WS8.3 (P2)** — CORS + security-header checks (`tools/webchecks.py`,
+  curl-based) → `cors_misconfig` / `missing_security_headers` findings.
+- **WS8.4 (P2)** — opt-in active scanning behind `--active` (`tools/active.py`:
+  dalfox XSS + nuclei DAST) → `xss` finding; off by default.
+- **WS9.2 / WS9.4 (P2)** — `penguin run --dry-run`, and `--target` accepting a
+  comma-list / file / stdin.
 - **Hardening** — hellish stress suite (`tests/test_stress.py`) that found and
   fixed real bugs: a data-loss RMW race in `RunState.add_lines` and
   `WordlistManager.add` (now RLock-guarded), and non-dict-JSON crashes in the
   takeover/ledger/manifest/findings parsers.
 
 **Still open:** WS3 (some parallelism already landed pre-plan), WS6 (proxy
-overhaul), WS8.3 (CORS/security-header checks), WS8.4 (opt-in active vuln
-tools), WS8.5 (paid-source enrichment), WS9.2–9.4 (dry-run, Windows story,
-multi-target input).
+overhaul — mark_dead eviction + TTL cache already exist), WS8.5 (paid-source
+enrichment — needs API keys to build/test), WS9.3 (native-Windows story —
+largely docs).
 
 ---
 
