@@ -79,6 +79,18 @@ class TestDerive:
         assert by["dnssec_missing"].severity == "info"
         assert "bogus_unknown" not in by
 
+    def test_tls_issues_map_to_findings(self):
+        b1, b2, b3, b4 = _blocks()
+        b1["tls_issues"] = [
+            {"host": "a.ex.com", "expired": True, "self_signed": True, "days_left": -10},
+            {"host": "b.ex.com", "expiring_soon": True, "days_left": 5},
+        ]
+        fs = derive_findings(_TARGET, b1, b2, b3, b4, {"new": []})
+        by = {f.type for f in fs}
+        assert "tls_expired" in by       # a.ex.com
+        assert "tls_self_signed" in by   # a.ex.com
+        assert "tls_expiring_soon" in by  # b.ex.com
+
     def test_takeover_is_critical_finding(self):
         b1, b2, b3, b4 = _blocks()
         b1["takeovers"] = ["gone.ex.com"]

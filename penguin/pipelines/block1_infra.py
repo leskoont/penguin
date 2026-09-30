@@ -19,6 +19,7 @@ from ..tools import probe as pb
 from ..tools import resolve as rs
 from ..tools import subdomain as sd
 from ..tools import takeover as tk
+from ..tools import tlsintel as tls
 from ..tools._base import ToolContext
 from ..wordlists import WordlistManager
 
@@ -92,7 +93,7 @@ def _extract_scoped(text: str, rx: "re.Pattern[str]") -> set[str]:
 def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     ctx = ToolContext(cfg, run_dir=state.run_dir)
     results: dict = {"subdomains": [], "resolved": [], "live": [], "takeovers": [],
-                     "dns_issues": []}
+                     "dns_issues": [], "tls_issues": []}
     if not cfg.stage_enabled("infra"):
         logger.info("[block1] disabled by config")
         return results
@@ -244,4 +245,35 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
             if results["takeovers"]:
                 logger.warning("[block1] %d potential subdomain takeover(s)",
                                len(results["takeovers"]))
+
+    # ---- TLS / certificate intelligence ----
+    # Apex domains + a bounded sample of resolved hosts (one cert fetch each).
+    # SANs found on certs are an extra subdomain-discovery vector: in-scope ones
+    # are folded back into the subdomain set (and thus the cross-run accumulator).
+    cap = cfg.general.max_hosts_per_block or 25
+    tls_targets = list(dict.fromkeys(domains + results["resolved"][:cap]))
+    san_new: set[str] = set()
+    for tgt in tls_targets:
+        try:
+            cert = tls.fetch_and_parse(ctx, tgt)
+        except Exception:  # noqa - TLS intel is best-effort
+            logger.debug("[block1] tls-intel failed for %s", tgt, exc_info=True)
+            continue
+        if not cert:
+            continue
+        issue = {k: cert[k] for k in ("expired", "expiring_soon", "self_signed",
+                                      "days_left") if k in cert}
+        issue["host"] = cert.get("host", tgt)
+        if issue.get("expired") or issue.get("expiring_soon") or issue.get("self_signed"):
+            results["tls_issues"].append(issue)
+        for san in cert.get("sans", []):
+            if any(san == d or san.endswith("." + d) for d in domains):
+                san_new.add(san)
+    if san_new:
+        fresh = san_new - set(results["subdomains"])
+        if fresh:
+            results["subdomains"] = sorted(set(results["subdomains"]) | fresh)
+            logger.info("[block1] TLS SANs contributed %d new in-scope hosts", len(fresh))
+    if results["tls_issues"]:
+        state.save_json("tls_issues.json", results["tls_issues"])
     return results
