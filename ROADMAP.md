@@ -5,6 +5,33 @@ codebase. Derived from a full read of `penguin/` (config, runner, state,
 proxies, wordlists, notify, venv, `tools/*`, `pipelines/*`, `ui/*`) on
 2026-07-14.
 
+## 🧠 Analytics & vector expansion — 2026-09-30
+
+Multiplied the analysis vectors, tools and intelligence:
+
+- **Intelligent analysis layer** (`penguin/analysis.py`): severity-weighted risk
+  scoring (overall + per-host + per-type), host normalization, and a
+  **correlation engine** that turns co-occurring findings into attack-chain
+  *insights* (source+secret, config+secret, CORS+client-secrets, XSS+weak
+  headers, open DB, takeover, zone transfer, email-spoofable, systemic weak
+  headers). Surfaced as an "Attack surface" report section and a new
+  `penguin analyze <run_dir | reports-dir | findings.jsonl>` command.
+- **DNS intelligence** (`tools/dnsintel.py`): AXFR zone-transfer, SPF/DMARC
+  email-auth, DNSSEC — findings `zone_transfer`/`missing_spf`/`missing_dmarc`/
+  `dnssec_missing`.
+- **TLS/cert intelligence** (`tools/tlsintel.py`): expiry / self-signed /
+  expiring-soon, and cert **SANs folded back into the subdomain set** (new
+  passive discovery vector).
+- **Content intelligence** (`tools/contentintel.py`): exposed-file detection
+  (.env / .git/config / actuator / backups / server-status / phpinfo / listings)
+  with soft-404 rejection, plus robots/sitemap **endpoint mining**.
+- **Findings model** now spans 20+ typed categories feeding scoring/correlation.
+- **Hardening**: 4 adversarial stress rounds (`tests/test_stress2.py`) +
+  15 full-weight scenarios (`tests/test_scenarios.py`); a junk-asset leak in
+  `derive_findings` was found and fixed. Suite: 295 tests green.
+
+---
+
 ## ✅ Status — 2026-09-23
 
 Delivered since the plan was written (each as its own commit, suite green):
