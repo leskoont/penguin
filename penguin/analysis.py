@@ -146,6 +146,20 @@ def correlate(findings: Iterable[Finding]) -> list[Insight]:
                 "Active XSS on a host lacking CSP/other headers — fewer mitigations "
                 "stand between the payload and execution.",
                 [f.asset for f in types["xss"]][:8]))
+        # zone transfer leaks the whole DNS zone
+        if has("zone_transfer"):
+            insights.append(Insight(
+                "DNS zone transfer allowed", "critical", host,
+                "An authoritative nameserver served a full AXFR — the entire "
+                "internal DNS map (hosts, services) is disclosed.",
+                [f.asset for f in types["zone_transfer"]][:8]))
+        # no SPF *and* no DMARC = domain is spoofable in email
+        if has("missing_spf") and has("missing_dmarc"):
+            insights.append(Insight(
+                "Email domain spoofable", "medium", host,
+                "Neither SPF nor DMARC is published — attackers can send mail as "
+                "this domain (phishing).",
+                [host]))
         # broad weak posture: many missing-header findings
         if len(types.get("missing_security_headers", [])) >= 3:
             insights.append(Insight(

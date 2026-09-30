@@ -58,14 +58,18 @@ _TYPES = {
     "subdomain_takeover": ("critical", "nuclei/subzy"),
     "exposed_git":   ("critical", "gitdumper"),
     "secret":        ("critical", "trufflehog/gitleaks"),
+    "zone_transfer": ("critical", "dig"),
     "js_secret":     ("high",     "jsluice/SecretFinder"),
     "open_database": ("high",     "nmap/masscan"),
     "xss": ("high",               "dalfox"),
     "cors_misconfig": ("high",    "webchecks"),
     "public_bucket": ("medium",   "s3scanner/cloud_enum"),
     "origin_ip":     ("medium",   "origin-bypass"),
+    "missing_dmarc": ("medium",   "dig"),
     "missing_security_headers": ("low", "webchecks"),
+    "missing_spf":   ("low",      "dig"),
     "new_subdomain": ("info",     "diff"),
+    "dnssec_missing": ("info",    "dig"),
 }
 
 
@@ -87,6 +91,15 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
     for host in b1.get("takeovers", []):
         out.append(_mk("subdomain_takeover", tv, host, url=str(host),
                        evidence="dangling record claimable"))
+    for iss in b1.get("dns_issues", []):
+        if not isinstance(iss, dict):
+            continue
+        itype = iss.get("type")
+        if itype not in _TYPES:
+            continue
+        dom = iss.get("domain", tv)
+        ev = f"via {iss.get('ns')}" if iss.get("ns") else ""
+        out.append(_mk(itype, tv, dom, evidence=ev))
     for host in diff.get("new", []):
         out.append(_mk("new_subdomain", tv, host))
     for sec in b2.get("js_secrets", []):

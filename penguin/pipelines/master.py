@@ -86,7 +86,7 @@ ProgressCb = Callable[[int, str, str], None]
 # already produces -- downstream `b#["key"]` / `b#.get("key")` lookups never
 # KeyError on a failed block.
 _BLOCK_FALLBACKS: dict[int, dict] = {
-    1: {"subdomains": [], "resolved": [], "live": [], "takeovers": []},
+    1: {"subdomains": [], "resolved": [], "live": [], "takeovers": [], "dns_issues": []},
     2: {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [], "active": []},
     3: {"open_db": [], "buckets": []},
     4: {"origin_ips": [], "exposed_git": [], "secrets": []},
@@ -110,8 +110,11 @@ def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict) -> dict[str, int]
     """
     cors = sum(1 for i in b2.get("web_issues", [])
                if isinstance(i, dict) and (i.get("cors_bad") or i.get("cors_reflected")))
+    zone = sum(1 for i in b1.get("dns_issues", [])
+               if isinstance(i, dict) and i.get("type") == "zone_transfer")
     categories = {
         "subdomain takeovers": len(b1.get("takeovers", [])),
+        "DNS zone transfers": zone,
         "secrets": len(b2.get("js_secrets", [])) + len(b4.get("secrets", [])),
         "open databases": len(b3.get("open_db", [])),
         "exposed .git": len(b4.get("exposed_git", [])),
@@ -302,6 +305,7 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "takeovers": len(b1.get("takeovers", [])),
         "web_issues": len(b2.get("web_issues", [])),
         "active_xss": len(b2.get("active", [])),
+        "dns_issues": len(b1.get("dns_issues", [])),
     }
 
     # Typed, severity-ranked findings, accumulated per target with a

@@ -62,6 +62,23 @@ class TestDerive:
         assert "credentials" in by["cors_misconfig"].evidence
         assert by["missing_security_headers"].severity == "low"
 
+    def test_dns_issues_map_to_findings(self):
+        b1, b2, b3, b4 = _blocks()
+        b1["dns_issues"] = [
+            {"type": "zone_transfer", "domain": "ex.com", "ns": "ns1.ex.com"},
+            {"type": "missing_spf", "domain": "ex.com"},
+            {"type": "missing_dmarc", "domain": "ex.com"},
+            {"type": "dnssec_missing", "domain": "ex.com"},
+            {"type": "bogus_unknown", "domain": "ex.com"},  # unknown -> skipped
+        ]
+        fs = derive_findings(_TARGET, b1, b2, b3, b4, {"new": []})
+        by = {f.type: f for f in fs}
+        assert by["zone_transfer"].severity == "critical"
+        assert by["missing_dmarc"].severity == "medium"
+        assert by["missing_spf"].severity == "low"
+        assert by["dnssec_missing"].severity == "info"
+        assert "bogus_unknown" not in by
+
     def test_takeover_is_critical_finding(self):
         b1, b2, b3, b4 = _blocks()
         b1["takeovers"] = ["gone.ex.com"]
