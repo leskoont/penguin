@@ -77,6 +77,22 @@ def ledger_table(rollup: dict) -> Table:
     return t
 
 
+def risk_hosts_table(top_hosts: list) -> Table:
+    """Risk-ranked hosts from analysis.analyze()['top_hosts']."""
+    t = Table(title="risk-ranked hosts")
+    t.add_column("host")
+    t.add_column("score", justify="right")
+    t.add_column("top severity")
+    t.add_column("findings", justify="right")
+    sev_color = {"critical": "red", "high": "red", "medium": "yellow",
+                 "low": "cyan", "info": "dim"}
+    for h in top_hosts:
+        sev = h.get("top_severity", "info")
+        t.add_row(str(h.get("host", "?")), str(h.get("score", 0)),
+                  f"[{sev_color.get(sev, 'white')}]{sev}[/]", str(h.get("count", 0)))
+    return t
+
+
 def sources_table(counts: dict) -> Table:
     """Per-source subdomain contribution; zero-output sources flagged red."""
     t = Table(title="subdomain contribution by source")

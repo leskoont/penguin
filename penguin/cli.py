@@ -458,6 +458,75 @@ def cmd_diagnose(
     return 0
 
 
+@app.command("analyze", help="risk-score + correlate a target's findings into an attack surface")
+def cmd_analyze(
+    ctx: typer.Context,
+    path: str = typer.Argument(..., help="a run dir, a target's reports dir, or a findings.jsonl file"),
+    top: int = typer.Option(10, "--top", help="how many risk-ranked hosts to show"),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
+    no_venv: bool = typer.Option(False, "--no-venv", hidden=True),
+    reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
+) -> int:
+    import json
+    from pathlib import Path
+
+    from . import analysis
+    from .findings import Finding
+    from .ui.tables import risk_hosts_table
+
+    p = Path(path)
+    # Locate the findings.jsonl: direct file, a reports/<target> dir, or a run
+    # dir (results/<target>/<run_id>) -> map to reports/<target>/findings.jsonl.
+    fjson: Optional[Path] = None
+    if p.is_file():
+        fjson = p
+    elif (p / "findings.jsonl").is_file():
+        fjson = p / "findings.jsonl"
+    elif p.is_dir():
+        cfg = load(_merge(ctx, verbose, None, None)[0])
+        target = p.name
+        meta = p / "_run_meta.json"
+        if meta.exists():
+            try:
+                target = json.loads(meta.read_text()).get("target", {}).get("value", p.parent.name)
+            except (ValueError, OSError):
+                target = p.parent.name
+        else:
+            target = p.parent.name
+        from .findings import _sanitize_slug
+        cand = cfg.path("reports", _sanitize_slug(target), "findings.jsonl")
+        if cand.exists():
+            fjson = cand
+    if not fjson or not fjson.exists():
+        LOG.error("[analyze] no findings.jsonl found at/for %s", p)
+        return 1
+
+    findings = []
+    for line in fjson.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(d, dict):
+            findings.append(Finding.from_dict(d))
+
+    a = analysis.analyze(findings, top=top)
+    console.print(f"[bold]attack surface[/] — overall risk [bold]{a['overall']}[/] "
+                  f"([cyan]{a['risk_band'].upper()}[/]) from {len(findings)} findings")
+    console.print(risk_hosts_table(a["top_hosts"]))
+    if a["insights"]:
+        console.print("[bold]correlated insights (attack chains):[/]")
+        for ins in a["insights"]:
+            console.print(f"  [{ins['severity'].upper()}] {ins['title']} — {ins['host']}")
+            console.print(f"      [dim]{ins['detail']}[/]")
+    else:
+        console.print("[dim]no correlated insights[/]")
+    return 0
+
+
 @app.command("proxies", help="refresh proxy pool now")
 def cmd_proxies(
     ctx: typer.Context,

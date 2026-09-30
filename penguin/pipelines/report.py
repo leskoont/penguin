@@ -13,7 +13,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from .. import diagnostics
+from .. import analysis, diagnostics
 from ..config import Config
 from ..findings import SEVERITY_ORDER, Finding
 
@@ -60,6 +60,29 @@ def _findings_markdown(findings: list[Finding], run_id: str) -> list[str]:
             detail = f" — {f.evidence}" if f.evidence else ""
             src = f" _(via {f.source_tool})_" if f.source_tool else ""
             lines.append(f"- `{f.type}`{tag}: {asset}{detail}{src}")
+        lines.append("")
+    return lines
+
+
+def _analysis_markdown(findings: list[Finding]) -> list[str]:
+    if not findings:
+        return []
+    a = analysis.analyze(findings)
+    lines = ["## Attack surface", "",
+             f"- Overall risk score: **{a['overall']}** ({a['risk_band'].upper()})", ""]
+    if a["top_hosts"]:
+        lines.append("### Risk-ranked hosts")
+        lines.append("")
+        lines.append("| host | score | top | findings |")
+        lines.append("|---|--:|---|--:|")
+        for h in a["top_hosts"]:
+            lines.append(f"| {h['host']} | {h['score']} | {h['top_severity']} | {h['count']} |")
+        lines.append("")
+    if a["insights"]:
+        lines.append("### Correlated insights (attack chains)")
+        lines.append("")
+        for ins in a["insights"]:
+            lines.append(f"- **[{ins['severity'].upper()}] {ins['title']}** — `{ins['host']}`: {ins['detail']}")
         lines.append("")
     return lines
 
@@ -170,6 +193,7 @@ def build_report(cfg: Config, target: dict, summary: dict) -> Path:
         f"- New findings this run: **{summary.get('new_findings', 0)}**",
         "",
     ]
+    md_text += _analysis_markdown(findings)
     md_text += _findings_markdown(findings, run_id)
     md_text += _coverage_markdown(run_dir) if run_dir else []
     md_text += [
