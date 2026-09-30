@@ -64,15 +64,19 @@ _TYPES = {
     "xss": ("high",               "dalfox"),
     "cors_misconfig": ("high",    "webchecks"),
     "tls_expired":    ("high",    "openssl"),
+    "exposed_config": ("high",    "contentintel"),
     "public_bucket": ("medium",   "s3scanner/cloud_enum"),
     "origin_ip":     ("medium",   "origin-bypass"),
     "missing_dmarc": ("medium",   "dig"),
     "tls_self_signed": ("medium", "openssl"),
+    "info_disclosure": ("medium", "contentintel"),
+    "directory_listing": ("medium", "contentintel"),
     "missing_security_headers": ("low", "webchecks"),
     "missing_spf":   ("low",      "dig"),
     "tls_expiring_soon": ("low",  "openssl"),
     "new_subdomain": ("info",     "diff"),
     "dnssec_missing": ("info",    "dig"),
+    "security_txt":  ("info",     "contentintel"),
 }
 
 
@@ -123,6 +127,14 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
         out.append(_mk("js_secret", tv, sec, evidence="JS analysis hit"))
     for url in b2.get("active", []):
         out.append(_mk("xss", tv, url, url=str(url), evidence="dalfox active XSS"))
+    for issue in b2.get("content_issues", []):
+        if not isinstance(issue, dict):
+            continue
+        kind = issue.get("kind")
+        if kind not in _TYPES:
+            continue
+        u = issue.get("url", "")
+        out.append(_mk(kind, tv, u, url=u))
     for issue in b2.get("web_issues", []):
         if not isinstance(issue, dict):
             continue

@@ -126,6 +126,13 @@ def correlate(findings: Iterable[Finding]) -> list[Insight]:
                 "Hijackable subdomain", "critical", host,
                 "Dangling record points at a claimable third-party service.",
                 [f.asset for f in types["subdomain_takeover"]][:8]))
+        # exposed config/env next to secrets = direct credential leak
+        if has("exposed_config") and (has("secret") or has("js_secret")):
+            insights.append(Insight(
+                "Exposed config leaking credentials", "critical", host,
+                "A served config/.env AND secret material on the same host — the "
+                "config likely contains live credentials.",
+                [f.asset for t in ("exposed_config", "secret", "js_secret") for f in types.get(t, [])][:8]))
         # open DB = unauthenticated data store
         if has("open_database"):
             insights.append(Insight(

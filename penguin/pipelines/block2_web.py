@@ -13,6 +13,7 @@ from ..state import ARTIFACTS, RunState, read_live_urls
 from ..tools import active as av
 from ..tools import api as ap
 from ..tools import content as ct
+from ..tools import contentintel as ci
 from ..tools import nuclei_custom as nu
 from ..tools import probe as pb
 from ..tools import secrets as sc
@@ -129,7 +130,8 @@ def _select_hosts(hosts: list[str], max_hosts: Optional[int]) -> list[str]:
 
 def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     ctx = ToolContext(cfg, run_dir=state.run_dir)
-    results: dict = {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [], "active": []}
+    results: dict = {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [],
+                     "active": [], "content_issues": []}
     if not cfg.stage_enabled("web"):
         logger.info("[block2] disabled by config")
         return results
@@ -344,6 +346,19 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
             results["web_issues"].append(issue)
     if results["web_issues"]:
         state.save_json("web_issues.json", results["web_issues"])
+
+    # ---- content intelligence (sensitive files + robots/sitemap mining) ----
+    for res in run_parallel([partial(ci.check_host, ctx, h) for h in limited_hosts],
+                            max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
+                            label="block2 content intel"):
+        if not res:
+            continue
+        results["content_issues"].extend(res.get("exposed", []))
+        for url in res.get("listing", []):
+            results["content_issues"].append({"url": url, "kind": "directory_listing"})
+        results["endpoints"].extend(res.get("paths", []))
+    if results["content_issues"]:
+        state.save_json("content_issues.json", results["content_issues"])
 
     # ---- ACTIVE scanning (opt-in, --active only) ----
     if cfg.general.active:

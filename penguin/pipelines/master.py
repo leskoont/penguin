@@ -88,7 +88,8 @@ ProgressCb = Callable[[int, str, str], None]
 _BLOCK_FALLBACKS: dict[int, dict] = {
     1: {"subdomains": [], "resolved": [], "live": [], "takeovers": [], "dns_issues": [],
         "tls_issues": []},
-    2: {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [], "active": []},
+    2: {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [], "active": [],
+        "content_issues": []},
     3: {"open_db": [], "buckets": []},
     4: {"origin_ips": [], "exposed_git": [], "secrets": []},
 }
@@ -113,6 +114,8 @@ def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict) -> dict[str, int]
                if isinstance(i, dict) and (i.get("cors_bad") or i.get("cors_reflected")))
     zone = sum(1 for i in b1.get("dns_issues", [])
                if isinstance(i, dict) and i.get("type") == "zone_transfer")
+    exposed_cfg = sum(1 for i in b2.get("content_issues", [])
+                      if isinstance(i, dict) and i.get("kind") == "exposed_config")
     categories = {
         "subdomain takeovers": len(b1.get("takeovers", [])),
         "DNS zone transfers": zone,
@@ -122,6 +125,7 @@ def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict) -> dict[str, int]
         "public buckets": len(b3.get("buckets", [])),
         "CORS misconfigs": cors,
         "active XSS": len(b2.get("active", [])),
+        "exposed configs": exposed_cfg,
     }
     return {k: n for k, n in categories.items() if n}
 
@@ -308,6 +312,7 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "active_xss": len(b2.get("active", [])),
         "dns_issues": len(b1.get("dns_issues", [])),
         "tls_issues": len(b1.get("tls_issues", [])),
+        "content_issues": len(b2.get("content_issues", [])),
     }
 
     # Typed, severity-ranked findings, accumulated per target with a
