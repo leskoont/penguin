@@ -68,6 +68,16 @@ class TestCorrelate:
         ins = A.correlate(fs)
         assert any(i.title == "Systemically weak security headers" for i in ins)
 
+    def test_zone_transfer_insight(self):
+        ins = A.correlate([F("zone_transfer", "critical", target="ex.com", asset="ex.com")])
+        assert any(i.title == "DNS zone transfer allowed" for i in ins)
+
+    def test_email_spoofable_insight(self):
+        fs = [F("missing_spf", "low", target="ex.com", asset="ex.com"),
+              F("missing_dmarc", "medium", target="ex.com", asset="ex.com")]
+        ins = A.correlate(fs)
+        assert any(i.title == "Email domain spoofable" for i in ins)
+
     def test_no_false_chain(self):
         # git on one host, secret on another -> no chain
         fs = [F("exposed_git", "critical", url="https://a.ex.com/.git/"),

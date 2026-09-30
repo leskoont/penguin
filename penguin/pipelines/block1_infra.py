@@ -14,6 +14,7 @@ from typing import Optional
 from ..config import Config
 from ..parallel import run_parallel
 from ..state import ARTIFACTS, RunState
+from ..tools import dnsintel as di
 from ..tools import probe as pb
 from ..tools import resolve as rs
 from ..tools import subdomain as sd
@@ -90,7 +91,8 @@ def _extract_scoped(text: str, rx: "re.Pattern[str]") -> set[str]:
 
 def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     ctx = ToolContext(cfg, run_dir=state.run_dir)
-    results: dict = {"subdomains": [], "resolved": [], "live": [], "takeovers": []}
+    results: dict = {"subdomains": [], "resolved": [], "live": [], "takeovers": [],
+                     "dns_issues": []}
     if not cfg.stage_enabled("infra"):
         logger.info("[block1] disabled by config")
         return results
@@ -221,6 +223,15 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     results["resolved"] = state.read_lines(ARTIFACTS.RESOLVED)
     if live_csv.exists():
         results["live"] = state.read_lines(ARTIFACTS.LIVE_HTTPX_CSV)
+
+    # ---- DNS intelligence (zone transfer / email auth / DNSSEC) ----
+    for dom in domains:
+        try:
+            results["dns_issues"].extend(di.check_domain(ctx, dom))
+        except Exception:  # noqa - DNS intel is best-effort
+            logger.debug("[block1] dns-intel failed for %s", dom, exc_info=True)
+    if results["dns_issues"]:
+        state.save_json("dns_issues.json", results["dns_issues"])
 
     # ---- subdomain-takeover detection ----
     # Run over the resolved set (dangling records only matter for names that
