@@ -43,6 +43,20 @@ class TestDerive:
         b1, b2, b3, b4 = _blocks()
         assert derive_findings(_TARGET, b1, b2, b3, b4, {"new": []}) == []
 
+    def test_content_issues_map_to_findings(self):
+        b1, b2, b3, b4 = _blocks()
+        b2["content_issues"] = [
+            {"url": "https://a.ex.com/.env", "kind": "exposed_config"},
+            {"url": "https://a.ex.com/server-status", "kind": "info_disclosure"},
+            {"url": "https://a.ex.com/uploads/", "kind": "directory_listing"},
+            {"url": "https://a.ex.com/.well-known/security.txt", "kind": "security_txt"},
+            {"url": "https://a.ex.com/x", "kind": "bogus"},  # unknown -> skipped
+        ]
+        fs = derive_findings(_TARGET, b1, b2, b3, b4, {"new": []})
+        by = {f.type for f in fs}
+        assert {"exposed_config", "info_disclosure", "directory_listing", "security_txt"} <= by
+        assert "bogus" not in by
+
     def test_active_xss_finding(self):
         b1, b2, b3, b4 = _blocks()
         b2["active"] = ["https://x.com/?q=<script>"]

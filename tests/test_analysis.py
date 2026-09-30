@@ -68,6 +68,12 @@ class TestCorrelate:
         ins = A.correlate(fs)
         assert any(i.title == "Systemically weak security headers" for i in ins)
 
+    def test_config_plus_secret_chain(self):
+        fs = [F("exposed_config", "high", url="https://a.ex.com/.env"),
+              F("js_secret", "high", url="https://a.ex.com/app.js")]
+        ins = A.correlate(fs)
+        assert any(i.title == "Exposed config leaking credentials" for i in ins)
+
     def test_zone_transfer_insight(self):
         ins = A.correlate([F("zone_transfer", "critical", target="ex.com", asset="ex.com")])
         assert any(i.title == "DNS zone transfer allowed" for i in ins)
