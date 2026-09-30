@@ -157,6 +157,10 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
         out.append(_mk("exposed_git", tv, git, url=str(git)))
     for sec in b4.get("secrets", []):
         out.append(_mk("secret", tv, sec, evidence="secret scanner hit"))
+    # Drop findings whose asset came from a falsy/None list entry (a degraded
+    # block can hand back None/"" items); str(None) would otherwise leak a junk
+    # "None" asset into the report.
+    out = [f for f in out if f.asset and f.asset.lower() != "none"]
     return out
 
 
