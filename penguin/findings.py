@@ -63,11 +63,14 @@ _TYPES = {
     "open_database": ("high",     "nmap/masscan"),
     "xss": ("high",               "dalfox"),
     "cors_misconfig": ("high",    "webchecks"),
+    "tls_expired":    ("high",    "openssl"),
     "public_bucket": ("medium",   "s3scanner/cloud_enum"),
     "origin_ip":     ("medium",   "origin-bypass"),
     "missing_dmarc": ("medium",   "dig"),
+    "tls_self_signed": ("medium", "openssl"),
     "missing_security_headers": ("low", "webchecks"),
     "missing_spf":   ("low",      "dig"),
+    "tls_expiring_soon": ("low",  "openssl"),
     "new_subdomain": ("info",     "diff"),
     "dnssec_missing": ("info",    "dig"),
 }
@@ -100,6 +103,20 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
         dom = iss.get("domain", tv)
         ev = f"via {iss.get('ns')}" if iss.get("ns") else ""
         out.append(_mk(itype, tv, dom, evidence=ev))
+    for iss in b1.get("tls_issues", []):
+        if not isinstance(iss, dict):
+            continue
+        host = iss.get("host", tv)
+        days = iss.get("days_left")
+        if iss.get("expired"):
+            out.append(_mk("tls_expired", tv, host, url=host,
+                           evidence=f"certificate expired ({days}d)"))
+        elif iss.get("expiring_soon"):
+            out.append(_mk("tls_expiring_soon", tv, host, url=host,
+                           evidence=f"expires in {days}d"))
+        if iss.get("self_signed"):
+            out.append(_mk("tls_self_signed", tv, host, url=host,
+                           evidence="issuer == subject"))
     for host in diff.get("new", []):
         out.append(_mk("new_subdomain", tv, host))
     for sec in b2.get("js_secrets", []):

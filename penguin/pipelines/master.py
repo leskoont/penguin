@@ -86,7 +86,8 @@ ProgressCb = Callable[[int, str, str], None]
 # already produces -- downstream `b#["key"]` / `b#.get("key")` lookups never
 # KeyError on a failed block.
 _BLOCK_FALLBACKS: dict[int, dict] = {
-    1: {"subdomains": [], "resolved": [], "live": [], "takeovers": [], "dns_issues": []},
+    1: {"subdomains": [], "resolved": [], "live": [], "takeovers": [], "dns_issues": [],
+        "tls_issues": []},
     2: {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [], "active": []},
     3: {"open_db": [], "buckets": []},
     4: {"origin_ips": [], "exposed_git": [], "secrets": []},
@@ -306,6 +307,7 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "web_issues": len(b2.get("web_issues", [])),
         "active_xss": len(b2.get("active", [])),
         "dns_issues": len(b1.get("dns_issues", [])),
+        "tls_issues": len(b1.get("tls_issues", [])),
     }
 
     # Typed, severity-ranked findings, accumulated per target with a
