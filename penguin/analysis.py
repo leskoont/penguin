@@ -191,15 +191,42 @@ def risk_band(overall: int) -> str:
     return "clean"
 
 
+# How much a correlated insight adds to the *effective* risk score, by severity.
+# Correlations are the point of the analytics layer, so a confirmed attack chain
+# meaningfully raises the risk band beyond the raw finding sum.
+_INSIGHT_BOOST = {"critical": 60, "high": 25, "medium": 8, "low": 2, "info": 0}
+
+
+def effective_band(findings: list[Finding], insights: list[Insight], overall: int) -> tuple[int, str]:
+    """Risk band that factors in correlated insights and the presence of
+    critical findings — not just the raw weighted sum. Returns (effective_score,
+    band)."""
+    boost = sum(_INSIGHT_BOOST.get(i.severity, 0) for i in insights)
+    effective = overall + boost
+    band = risk_band(effective)
+    n_crit_find = sum(1 for f in findings if f.severity == "critical")
+    n_crit_ins = sum(1 for i in insights if i.severity == "critical")
+    # A critical finding should never read below "high".
+    if n_crit_find >= 1 and band in ("clean", "low", "elevated"):
+        band = "high"
+    # A critical finding confirmed by a critical attack-chain insight — or two
+    # independent critical findings — is a critical-band posture.
+    if (n_crit_find >= 1 and n_crit_ins >= 1) or n_crit_find >= 2:
+        band = "critical"
+    return effective, band
+
+
 def analyze(findings: Iterable[Finding], *, top: int = 10) -> dict:
     """One-shot: score + rank + correlate. Returns a JSON-friendly summary."""
     findings = list(findings)
     scored = score(findings)
     ranked = rank_hosts(scored, top)
     insights = correlate(findings)
+    effective, band = effective_band(findings, insights, scored["overall"])
     return {
         "overall": scored["overall"],
-        "risk_band": risk_band(scored["overall"]),
+        "effective_score": effective,
+        "risk_band": band,
         "by_type": scored["by_type"],
         "top_hosts": [{"host": h, **hb} for h, hb in ranked],
         "insights": [i.to_dict() for i in insights],
