@@ -1,0 +1,27 @@
+{
+  "_meta": {"source": "seed product->CVE map (CPE-style)", "note": "representative subset; refresh via `penguin kb-update`"},
+  "products": {
+    "apache": [
+      {"cve": "CVE-2021-41773", "constraint": "==2.4.49", "cvss": 9.8, "epss": 0.97, "title": "httpd path traversal/RCE"},
+      {"cve": "CVE-2021-42013", "constraint": "<=2.4.50", "cvss": 9.8, "epss": 0.95, "title": "httpd path traversal (incomplete 41773 fix)"}
+    ],
+    "nginx": [
+      {"cve": "CVE-2019-20372", "constraint": "<1.17.7", "cvss": 5.3, "epss": 0.12, "title": "error_page request smuggling"}
+    ],
+    "openssh": [
+      {"cve": "CVE-2023-38408", "constraint": "<9.3", "cvss": 9.8, "epss": 0.55, "title": "ssh-agent RCE"}
+    ],
+    "log4j": [
+      {"cve": "CVE-2021-44228", "constraint": "<2.15.0", "cvss": 10.0, "epss": 0.97, "title": "Log4Shell JNDI RCE"}
+    ],
+    "wordpress": [
+      {"cve": "CVE-2022-21661", "constraint": "<5.8.3", "cvss": 8.0, "epss": 0.3, "title": "WP_Query SQLi"}
+    ],
+    "jquery": [
+      {"cve": "CVE-2020-11022", "constraint": "<3.5.0", "cvss": 6.1, "epss": 0.08, "title": "jQuery htmlPrefilter XSS"}
+    ],
+    "php": [
+      {"cve": "CVE-2019-11043", "constraint": "<7.3.11", "cvss": 9.8, "epss": 0.9, "title": "php-fpm RCE"}
+    ]
+  }
+}

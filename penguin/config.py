@@ -101,6 +101,10 @@ class GeneralConfig:
     # templates) that send crafted payloads to the target -- only ever use this
     # in authorized scope.
     active: bool = False
+    # Optional directory of extra knowledge-bank JSON files (kev.json,
+    # cve_index.json, default_creds.json) merged on top of the bundled seed set.
+    # Populate/refresh it with `penguin kb-update`. Empty = bundled seed only.
+    knowledge_dir: str = ""
     # SLIRP-SAFE PROFILE. The real bottleneck turned out to be VirtualBox's
     # user-mode NAT (SLIRP, the 10.0.2.15 gateway): it keeps a tiny concurrent
     # socket table and collapses the *whole* VM link when a recon burst exceeds

@@ -92,7 +92,35 @@ penguin.bat run --target example.com          # Windows cmd
 
 # resume a crashed run, skipping blocks that already completed
 ./penguin.sh run --resume results/example.com/<run_id>
+
+# risk-score + correlate a target's findings into an attack surface
+./penguin.sh analyze results/example.com/<run_id>
+
+# inspect / query the vulnerability knowledge bank
+./penguin.sh kb                       # stats
+./penguin.sh kb apache --version 2.4.49   # CVEs for a product@version
+./penguin.sh kb-update                # refresh CISA KEV from the live feed
 ```
+
+## Intelligence layers
+
+Beyond raw findings, penguin builds **analytics on top of correlations**:
+
+- **Risk scoring & attack surface** (`penguin analyze`, report "Attack surface"
+  section): severity-weighted score per host and overall, risk-ranked hosts, and
+  a **risk band that factors in correlated insights** — a confirmed attack chain
+  raises the posture, not just the raw count.
+- **Correlation engine**: co-occurring findings on a host become attack-chain
+  *insights* (exposed-git+secret, config+secret, CORS+client-secrets, known
+  CVE on an already-exposed asset, actively-exploited CVE, zone transfer,
+  email-spoofable, …).
+- **Knowledge-bank comparison**: detected technologies + versions are
+  cross-referenced against public vulnerability banks — **CISA KEV**, a
+  product→CVE map (with CVSS/EPSS), and default-credential lists — to derive new
+  vectors: `kev_exploited` (critical, actively exploited in the wild),
+  `known_cve` (severity from CVSS), and `default_credentials`. A seed set ships
+  in `penguin/data/knowledge/`; `penguin kb-update` refreshes KEV from the live
+  CISA feed, and `general.knowledge_dir` points at your own extended bank.
 
 If `penguin run` is invoked with no `--target` and `config/targets.txt` is
 empty, it drops into an interactive wizard to pick a target and stages

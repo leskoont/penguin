@@ -59,6 +59,9 @@ _TYPES = {
     "exposed_git":   ("critical", "gitdumper"),
     "secret":        ("critical", "trufflehog/gitleaks"),
     "zone_transfer": ("critical", "dig"),
+    "kev_exploited": ("critical", "knowledge-bank/CISA-KEV"),
+    "known_cve":     ("high",     "knowledge-bank"),
+    "default_credentials": ("high", "knowledge-bank"),
     "js_secret":     ("high",     "jsluice/SecretFinder"),
     "open_database": ("high",     "nmap/masscan"),
     "xss": ("high",               "dalfox"),
@@ -135,6 +138,28 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
             continue
         u = issue.get("url", "")
         out.append(_mk(kind, tv, u, url=u))
+    for vec in b2.get("kb_findings", []):
+        if not isinstance(vec, dict):
+            continue
+        kind = vec.get("kind")
+        prod = vec.get("product", "")
+        ver = vec.get("version") or "?"
+        if kind in ("kev_exploited", "known_cve"):
+            cve = vec.get("cve", "")
+            # known_cve severity tracks the CVE's CVSS; KEV is always critical.
+            sev = "critical" if kind == "kev_exploited" else (vec.get("severity") or "high")
+            ev = f"{prod} {ver}: {vec.get('title', '')}".strip()
+            epss = vec.get("epss")
+            if epss is not None:
+                ev += f" (EPSS {epss})"
+            if kind == "kev_exploited":
+                ev = "ACTIVELY EXPLOITED (CISA KEV) — " + ev
+            out.append(Finding(type=kind, severity=sev, target=tv, asset=cve or f"{prod} {ver}",
+                               source_tool=_TYPES[kind][1], evidence=ev))
+        elif kind == "default_credentials":
+            n = len(vec.get("creds", []))
+            out.append(_mk("default_credentials", tv, prod,
+                           evidence=f"{n} known default credential set(s) for {prod} — test manually"))
     for issue in b2.get("web_issues", []):
         if not isinstance(issue, dict):
             continue

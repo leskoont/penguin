@@ -1,0 +1,12 @@
+{
+  "_meta": {"source": "seed sample of CISA Known Exploited Vulnerabilities (KEV)", "note": "representative subset; refresh via `penguin kb-update`"},
+  "entries": [
+    {"cve": "CVE-2021-44228", "vendor": "apache", "product": "log4j", "name": "Log4Shell RCE"},
+    {"cve": "CVE-2021-41773", "vendor": "apache", "product": "httpd", "name": "Path traversal / RCE"},
+    {"cve": "CVE-2022-22965", "vendor": "vmware", "product": "spring", "name": "Spring4Shell RCE"},
+    {"cve": "CVE-2019-0708", "vendor": "microsoft", "product": "rdp", "name": "BlueKeep RDP RCE"},
+    {"cve": "CVE-2017-5638", "vendor": "apache", "product": "struts", "name": "Struts2 OGNL RCE"},
+    {"cve": "CVE-2023-34362", "vendor": "progress", "product": "moveit", "name": "MOVEit SQLi"},
+    {"cve": "CVE-2014-0160", "vendor": "openssl", "product": "openssl", "name": "Heartbleed"}
+  ]
+}

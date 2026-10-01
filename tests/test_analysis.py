@@ -68,6 +68,19 @@ class TestCorrelate:
         ins = A.correlate(fs)
         assert any(i.title == "Systemically weak security headers" for i in ins)
 
+    def test_kev_insight(self):
+        ins = A.correlate([F("kev_exploited", "critical", target="ex.com", asset="CVE-2021-41773")])
+        assert any(i.title == "Actively-exploited CVE present" for i in ins)
+
+    def test_known_cve_on_exposed_asset_chain(self):
+        fs = [F("known_cve", "high", target="ex.com", asset="CVE-x", url="https://a.ex.com"),
+              F("open_database", "high", asset="a.ex.com:6379", url="")]
+        # put both on same host a.ex.com
+        fs = [F("known_cve", "high", url="https://a.ex.com"),
+              F("exposed_config", "high", url="https://a.ex.com/.env")]
+        ins = A.correlate(fs)
+        assert any(i.title == "Known CVE on an already-exposed asset" for i in ins)
+
     def test_config_plus_secret_chain(self):
         fs = [F("exposed_config", "high", url="https://a.ex.com/.env"),
               F("js_secret", "high", url="https://a.ex.com/app.js")]

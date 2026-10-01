@@ -153,6 +153,20 @@ def correlate(findings: Iterable[Finding]) -> list[Insight]:
                 "Active XSS on a host lacking CSP/other headers — fewer mitigations "
                 "stand between the payload and execution.",
                 [f.asset for f in types["xss"]][:8]))
+        # an actively-exploited CVE (CISA KEV) on a discovered asset
+        if has("kev_exploited"):
+            insights.append(Insight(
+                "Actively-exploited CVE present", "critical", host,
+                "A detected technology matches a CISA Known-Exploited-Vulnerability "
+                "— exploited in the wild; patch/verify immediately.",
+                [f.asset for f in types["kev_exploited"]][:8]))
+        # a known CVE next to an exposed data store / config widens the blast radius
+        if has("known_cve") and (has("open_database") or has("exposed_config")):
+            insights.append(Insight(
+                "Known CVE on an already-exposed asset", "high", host,
+                "A version-matched CVE co-occurs with an exposed store/config on the "
+                "same host — chain the CVE with the existing exposure.",
+                [f.asset for f in types.get("known_cve", [])][:8]))
         # zone transfer leaks the whole DNS zone
         if has("zone_transfer"):
             insights.append(Insight(

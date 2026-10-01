@@ -291,3 +291,45 @@ class TestAnalysisInvariants:
         bands = ["clean", "low", "elevated", "high", "critical"]
         vals = [A.risk_band(v) for v in (0, 10, 50, 120, 500)]
         assert [bands.index(b) for b in vals] == sorted(bands.index(b) for b in vals)
+
+
+class TestKnowledgeBankFuzz:
+    """Round 5: adversarial inputs to the knowledge-bank layer."""
+
+    def test_version_matches_fuzz(self):
+        import random
+
+        from penguin import knowledge as K
+        ops = ["<", "<=", "==", ">", ">=", "*", ""]
+        for _ in range(2000):
+            det = random.choice([None, "", "1", "1.2.3", "a.b", "9.9.9.9.9", "2.4.49-ubuntu"])
+            con = random.choice(ops) + random.choice(["1", "2.4.50", "x", "1.2.3", ""])
+            assert K.version_matches(det, con) in (True, False)  # never raises
+
+    def test_extract_binary_junk(self):
+        from penguin import knowledge as K
+        K.extract_technologies(_rand(20000), _rand(10000))  # must not raise
+
+    def test_match_tolerates_malformed_kb(self, tmp_path):
+        import json
+
+        from penguin.knowledge import KnowledgeBank
+        # malformed entries mixed into each file
+        (tmp_path / "cve_index.json").write_text(json.dumps({
+            "products": {"x": ["notadict", {"cve": "CVE-1", "constraint": "*", "cvss": "bad"}]}}),
+            encoding="utf-8")
+        (tmp_path / "kev.json").write_text('{"entries": ["x", {"no_cve": 1}, {"cve": "CVE-1"}]}',
+                                           encoding="utf-8")
+        (tmp_path / "default_creds.json").write_text('{"products": {"x": "notalist"}}', encoding="utf-8")
+        kb = KnowledgeBank.load([tmp_path])
+        vec = kb.match([("x", "1.0")])  # cvss "bad" -> severity info, no crash
+        assert isinstance(vec, list)
+
+    def test_huge_tech_list(self):
+        from penguin.knowledge import KnowledgeBank
+        kb = KnowledgeBank.load()
+        techs = [("apache", f"2.4.{i%60}") for i in range(10000)]
+        vec = kb.match(techs)
+        # CVEs are deduped across the whole list
+        cves = [v["cve"] for v in vec if v.get("cve")]
+        assert len(cves) == len(set(cves))

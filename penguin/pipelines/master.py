@@ -89,7 +89,7 @@ _BLOCK_FALLBACKS: dict[int, dict] = {
     1: {"subdomains": [], "resolved": [], "live": [], "takeovers": [], "dns_issues": [],
         "tls_issues": []},
     2: {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [], "active": [],
-        "content_issues": []},
+        "content_issues": [], "kb_findings": []},
     3: {"open_db": [], "buckets": []},
     4: {"origin_ips": [], "exposed_git": [], "secrets": []},
 }
@@ -116,6 +116,8 @@ def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict) -> dict[str, int]
                if isinstance(i, dict) and i.get("type") == "zone_transfer")
     exposed_cfg = sum(1 for i in b2.get("content_issues", [])
                       if isinstance(i, dict) and i.get("kind") == "exposed_config")
+    kev = sum(1 for v in b2.get("kb_findings", [])
+              if isinstance(v, dict) and v.get("kind") == "kev_exploited")
     categories = {
         "subdomain takeovers": len(b1.get("takeovers", [])),
         "DNS zone transfers": zone,
@@ -126,6 +128,7 @@ def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict) -> dict[str, int]
         "CORS misconfigs": cors,
         "active XSS": len(b2.get("active", [])),
         "exposed configs": exposed_cfg,
+        "actively-exploited CVEs (KEV)": kev,
     }
     return {k: n for k, n in categories.items() if n}
 
@@ -313,6 +316,9 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "dns_issues": len(b1.get("dns_issues", [])),
         "tls_issues": len(b1.get("tls_issues", [])),
         "content_issues": len(b2.get("content_issues", [])),
+        "kb_findings": len(b2.get("kb_findings", [])),
+        "kev": sum(1 for v in b2.get("kb_findings", [])
+                   if isinstance(v, dict) and v.get("kind") == "kev_exploited"),
     }
 
     # Typed, severity-ranked findings, accumulated per target with a
