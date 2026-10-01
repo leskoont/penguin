@@ -49,6 +49,9 @@ Repository = "https://github.com/leskoont/penguin"
 [tool.setuptools.packages.find]
 include = ["penguin*"]
 
+[tool.setuptools.package-data]
+penguin = ["data/knowledge/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

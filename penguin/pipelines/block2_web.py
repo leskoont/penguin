@@ -131,7 +131,7 @@ def _select_hosts(hosts: list[str], max_hosts: Optional[int]) -> list[str]:
 def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     ctx = ToolContext(cfg, run_dir=state.run_dir)
     results: dict = {"endpoints": [], "js_secrets": [], "api": [], "web_issues": [],
-                     "active": [], "content_issues": []}
+                     "active": [], "content_issues": [], "kb_findings": []}
     if not cfg.stage_enabled("web"):
         logger.info("[block2] disabled by config")
         return results
@@ -359,6 +359,25 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         results["endpoints"].extend(res.get("paths", []))
     if results["content_issues"]:
         state.save_json("content_issues.json", results["content_issues"])
+
+    # ---- knowledge-bank comparison (detected tech -> known CVEs / KEV / creds) ----
+    from ..knowledge import KnowledgeBank, extract_technologies
+    extra_dirs = [cfg.path(cfg.general.knowledge_dir)] if cfg.general.knowledge_dir else []
+    kb = KnowledgeBank.load(extra_dirs)
+    tech_txt = ""
+    techfile = state.path("technologies.txt")
+    if techfile.exists():
+        tech_txt = techfile.read_text(encoding="utf-8", errors="ignore")
+    csv_txt = ""
+    csvfile = state.path(ARTIFACTS.LIVE_HTTPX_CSV)
+    if csvfile.exists():
+        csv_txt = csvfile.read_text(encoding="utf-8", errors="ignore")
+    techs = extract_technologies(tech_txt, csv_txt)
+    results["kb_findings"] = kb.match(techs)
+    if results["kb_findings"]:
+        state.save_json("kb_findings.json", results["kb_findings"])
+        logger.warning("[block2] knowledge-bank: %d derived vectors (CVE/KEV/default-creds)",
+                       len(results["kb_findings"]))
 
     # ---- ACTIVE scanning (opt-in, --active only) ----
     if cfg.general.active:

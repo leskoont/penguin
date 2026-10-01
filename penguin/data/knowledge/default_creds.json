@@ -1,0 +1,12 @@
+{
+  "_meta": {"source": "seed default-credential list", "note": "flags services with well-known defaults to TEST (never auto-login); refresh via `penguin kb-update`"},
+  "products": {
+    "tomcat": [{"user": "tomcat", "pass": "tomcat"}, {"user": "admin", "pass": "admin"}],
+    "jenkins": [{"user": "admin", "pass": "admin"}],
+    "grafana": [{"user": "admin", "pass": "admin"}],
+    "mongodb": [{"user": "", "pass": ""}],
+    "redis": [{"user": "", "pass": ""}],
+    "elasticsearch": [{"user": "elastic", "pass": "changeme"}],
+    "phpmyadmin": [{"user": "root", "pass": ""}]
+  }
+}

@@ -57,6 +57,24 @@ class TestDerive:
         assert {"exposed_config", "info_disclosure", "directory_listing", "security_txt"} <= by
         assert "bogus" not in by
 
+    def test_kb_findings_map_with_variable_severity(self):
+        b1, b2, b3, b4 = _blocks()
+        b2["kb_findings"] = [
+            {"kind": "kev_exploited", "product": "apache", "version": "2.4.49",
+             "cve": "CVE-2021-41773", "cvss": 9.8, "epss": 0.97, "severity": "critical",
+             "title": "RCE"},
+            {"kind": "known_cve", "product": "jquery", "version": "3.4.1",
+             "cve": "CVE-2020-11022", "cvss": 6.1, "severity": "medium", "title": "XSS"},
+            {"kind": "default_credentials", "product": "tomcat", "version": "9.0",
+             "creds": [{"user": "tomcat", "pass": "tomcat"}]},
+        ]
+        fs = derive_findings(_TARGET, b1, b2, b3, b4, {"new": []})
+        by = {f.type: f for f in fs}
+        assert by["kev_exploited"].severity == "critical"
+        assert "ACTIVELY EXPLOITED" in by["kev_exploited"].evidence
+        assert by["known_cve"].severity == "medium"  # tracks the CVE's CVSS band
+        assert by["default_credentials"].severity == "high"
+
     def test_active_xss_finding(self):
         b1, b2, b3, b4 = _blocks()
         b2["active"] = ["https://x.com/?q=<script>"]

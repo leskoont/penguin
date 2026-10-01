@@ -527,6 +527,62 @@ def cmd_analyze(
     return 0
 
 
+@app.command("kb", help="show the knowledge bank (KEV/CVE/default-creds) or query a product")
+def cmd_kb(
+    ctx: typer.Context,
+    product: Optional[str] = typer.Argument(None, help="product to query, e.g. apache (optional)"),
+    version: Optional[str] = typer.Option(None, "--version", help="version to match CVEs against"),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
+    config: Optional[str] = typer.Option(None, "-c", "--config", help="path to config.yaml"),
+    no_venv: bool = typer.Option(False, "--no-venv", hidden=True),
+    reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
+) -> int:
+    cfg_path, _ = _merge(ctx, verbose, config, None)
+    cfg = load(cfg_path)
+    from .knowledge import KnowledgeBank
+    extra = [cfg.path(cfg.general.knowledge_dir)] if cfg.general.knowledge_dir else []
+    kb = KnowledgeBank.load(extra)
+    if not product:
+        console.print(f"[bold]knowledge bank[/]: {len(kb.kev)} KEV entries, "
+                      f"{len(kb.cve_index)} products with CVEs, "
+                      f"{len(kb.default_creds)} products with default creds")
+        console.print("products w/ CVEs: " + ", ".join(sorted(kb.cve_index)))
+        return 0
+    cves = kb.cves_for(product, version)
+    console.print(f"[bold]{product}[/] {version or '(any version)'}: {len(cves)} CVE match(es)")
+    for c in cves:
+        tag = "[red]KEV[/] " if c.get("kev") else ""
+        console.print(f"  {tag}{c.get('cve')} cvss={c.get('cvss')} epss={c.get('epss')} "
+                      f"[{c.get('severity')}] {c.get('title', '')}")
+    creds = kb.default_creds_for(product)
+    if creds:
+        console.print(f"[yellow]default creds[/] for {product}: "
+                      + ", ".join(f"{c.get('user','')}:{c.get('pass','')}" for c in creds))
+    return 0
+
+
+@app.command("kb-update", help="refresh the knowledge bank from public sources (CISA KEV)")
+def cmd_kb_update(
+    ctx: typer.Context,
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="verbose logging"),
+    config: Optional[str] = typer.Option(None, "-c", "--config", help="path to config.yaml"),
+    no_venv: bool = typer.Option(False, "--no-venv", hidden=True),
+    reinstall_venv: bool = typer.Option(False, "--reinstall-venv", hidden=True),
+) -> int:
+    cfg_path, _ = _merge(ctx, verbose, config, None)
+    cfg = load(cfg_path)
+    from .knowledge import update_kev
+    dest = cfg.path(cfg.general.knowledge_dir) if cfg.general.knowledge_dir else cfg.path("wordlists", "knowledge")
+    n = update_kev(dest)
+    if n < 0:
+        LOG.error("[kb-update] failed to fetch CISA KEV (network?); bundled seed still works")
+        return 1
+    LOG.info("[kb-update] wrote %d KEV entries to %s (set general.knowledge_dir to this path)", n, dest)
+    console.print(f"[green]KB updated[/]: {n} KEV entries -> {dest}")
+    console.print(f"Set [bold]general.knowledge_dir: {dest}[/] in config.yaml to use it.")
+    return 0
+
+
 @app.command("proxies", help="refresh proxy pool now")
 def cmd_proxies(
     ctx: typer.Context,
