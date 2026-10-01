@@ -5,6 +5,25 @@ codebase. Derived from a full read of `penguin/` (config, runner, state,
 proxies, wordlists, notify, venv, `tools/*`, `pipelines/*`, `ui/*`) on
 2026-07-14.
 
+## 🔗 Knowledge-bank layer — 2026-10-01
+
+- **`penguin/knowledge.py`**: cross-references discovered tech+versions against
+  public vulnerability banks — **CISA KEV**, product→CVE (CVSS/EPSS),
+  default-creds — and derives new vectors: `kev_exploited` (critical, actively
+  exploited), `known_cve` (severity from CVSS), `default_credentials`. Pure
+  version-constraint matcher + tech extraction; seed banks in
+  `penguin/data/knowledge/`, operator-extensible via `general.knowledge_dir`,
+  refreshable with `penguin kb-update`. CLI: `penguin kb`.
+- Correlations extended: actively-exploited CVE → critical insight; known CVE on
+  an already-exposed asset → high attack-chain insight.
+- **Risk banding now correlation-aware**: a confirmed critical attack chain
+  escalates the posture band (not just the raw finding sum).
+- 15 realistic *application* scenarios (`tests/test_scenarios2.py`) + a 5th
+  adversarial fuzz round; bugs fixed: junk-asset leak, non-numeric-CVSS crash.
+  Suite: 334 tests green.
+
+---
+
 ## 🧠 Analytics & vector expansion — 2026-09-30
 
 Multiplied the analysis vectors, tools and intelligence:
