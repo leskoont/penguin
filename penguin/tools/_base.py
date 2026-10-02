@@ -139,6 +139,10 @@ class ToolContext:
             "gau": ["-proxy", proxy],
             "ffuf": ["-x", proxy],
             "curl": ["-x", proxy],
+            # dalfox is target-facing and sends active payloads, so it must route
+            # through the pool (it supports --proxy incl. socks5://) rather than
+            # connecting directly and leaking the operator's real IP.
+            "dalfox": ["--proxy", proxy],
         }
         return mapping.get(tool, [])
 

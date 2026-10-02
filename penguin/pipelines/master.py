@@ -31,6 +31,9 @@ _MANIFEST_TOOLS = (
     "subfinder", "amass", "assetfinder", "findomain", "crtsh", "puredns", "dnsx",
     "gotator", "httpx", "nuclei", "katana", "gau", "ffuf", "arjun",
     "masscan", "nmap", "trufflehog", "gitleaks",
+    # tools the intelligence vectors depend on -- their absence silently narrows
+    # coverage (e.g. no dig => no DNS intel), so surface it in the manifest.
+    "dig", "openssl", "curl", "subzy", "dalfox",
 )
 
 

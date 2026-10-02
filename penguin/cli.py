@@ -478,11 +478,14 @@ def cmd_analyze(
     # Locate the findings.jsonl: direct file, a reports/<target> dir, or a run
     # dir (results/<target>/<run_id>) -> map to reports/<target>/findings.jsonl.
     fjson: Optional[Path] = None
+    valid_dir = False
     if p.is_file():
         fjson = p
     elif (p / "findings.jsonl").is_file():
         fjson = p / "findings.jsonl"
+        valid_dir = True
     elif p.is_dir():
+        valid_dir = True
         cfg = load(_merge(ctx, verbose, None, None)[0])
         target = p.name
         meta = p / "_run_meta.json"
@@ -498,7 +501,14 @@ def cmd_analyze(
         if cand.exists():
             fjson = cand
     if not fjson or not fjson.exists():
-        LOG.error("[analyze] no findings.jsonl found at/for %s", p)
+        if valid_dir:
+            # A real run/reports dir with no findings file just means a clean run
+            # (FindingStore only writes when there is something to record).
+            console.print("[green]clean[/] — no findings recorded for this target "
+                          "(overall risk 0)")
+            return 0
+        LOG.error("[analyze] no findings.jsonl found at/for %s "
+                  "(pass a run dir, a reports dir, or a findings.jsonl file)", p)
         return 1
 
     findings = []

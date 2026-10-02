@@ -333,3 +333,25 @@ class TestKnowledgeBankFuzz:
         # CVEs are deduped across the whole list
         cves = [v["cve"] for v in vec if v.get("cve")]
         assert len(cves) == len(set(cves))
+
+
+class TestProxyLeakInvariants:
+    """Target-facing tools that can proxy must route through the pool, not leak."""
+
+    def test_dalfox_is_proxied(self):
+        from penguin.config import Config
+        from penguin.tools._base import ToolContext
+        ctx = ToolContext(Config())
+        assert ctx.proxy_flag("dalfox", "socks5://1.2.3.4:1080") == ["--proxy", "socks5://1.2.3.4:1080"]
+
+    def test_curl_is_proxied(self):
+        from penguin.config import Config
+        from penguin.tools._base import ToolContext
+        ctx = ToolContext(Config())
+        assert ctx.proxy_flag("curl", "http://p:8080") == ["-x", "http://p:8080"]
+
+    def test_no_proxy_returns_empty(self):
+        from penguin.config import Config
+        from penguin.tools._base import ToolContext
+        ctx = ToolContext(Config())
+        assert ctx.proxy_flag("dalfox", None) == []

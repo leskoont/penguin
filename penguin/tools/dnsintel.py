@@ -7,19 +7,25 @@ output to the parsers.
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from ._base import ToolContext
 
 logger = logging.getLogger("penguin.tools.dnsintel")
 
 
-def _dig(ctx: ToolContext, args: list[str], timeout: int = 15) -> str:
+def _dig(ctx: ToolContext, args: list[str], timeout: int = 15) -> Optional[str]:
+    """Run dig, returning its stdout, or None when the query could not be made
+    (dig missing / SERVFAIL / timeout). None is distinct from an empty-but-
+    successful answer so callers never mistake a failed query for "no record"."""
     r = ctx.execute("dig", ["dig", *args], timeout=timeout, log_stdout=True, proxy=False)
-    return r.stdout or "" if r.ok else ""
+    if not r.ok:
+        return None
+    return r.stdout or ""
 
 
 def nameservers(ctx: ToolContext, domain: str) -> list[str]:
-    return parse_short(_dig(ctx, ["+short", "NS", domain]))
+    return parse_short(_dig(ctx, ["+short", "NS", domain]) or "")
 
 
 def parse_short(output: str) -> list[str]:
@@ -73,20 +79,28 @@ def check_domain(ctx: ToolContext, domain: str) -> list[dict]:
 
     # Zone transfer against each authoritative NS.
     for ns in nameservers(ctx, domain):
-        recs = axfr_records(_dig(ctx, ["AXFR", domain, f"@{ns}"], timeout=30))
+        axfr = _dig(ctx, ["AXFR", domain, f"@{ns}"], timeout=30)
+        if axfr is None:
+            continue
+        recs = axfr_records(axfr)
         if recs:
             issues.append({"type": "zone_transfer", "domain": domain, "ns": ns,
                            "records": recs[:50]})
             break  # one leaking NS is enough to report
 
-    # Email auth: missing SPF / DMARC allows spoofing.
-    if not has_spf(_dig(ctx, ["+short", "TXT", domain])):
+    # Email auth: missing SPF / DMARC allows spoofing. Only conclude "missing"
+    # when the query SUCCEEDED but returned no matching record -- a failed query
+    # (None, e.g. dig absent) must not masquerade as a missing record.
+    spf = _dig(ctx, ["+short", "TXT", domain])
+    if spf is not None and not has_spf(spf):
         issues.append({"type": "missing_spf", "domain": domain})
-    if not has_dmarc(_dig(ctx, ["+short", "TXT", f"_dmarc.{domain}"])):
+    dmarc = _dig(ctx, ["+short", "TXT", f"_dmarc.{domain}"])
+    if dmarc is not None and not has_dmarc(dmarc):
         issues.append({"type": "missing_dmarc", "domain": domain})
 
     # DNSSEC: no DS record => zone unsigned (informational).
-    if not parse_short(_dig(ctx, ["+short", "DS", domain])):
+    ds = _dig(ctx, ["+short", "DS", domain])
+    if ds is not None and not parse_short(ds):
         issues.append({"type": "dnssec_missing", "domain": domain})
 
     return issues
