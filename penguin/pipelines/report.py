@@ -9,22 +9,17 @@ from __future__ import annotations
 import html
 import json
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 
 from .. import analysis, diagnostics
 from ..config import Config
 from ..findings import SEVERITY_ORDER, Finding
+from ..findings import _sanitize_slug as _sanitize_slug  # single source of truth
 
 logger = logging.getLogger("penguin.report")
 
 _SEV_EMOJI = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵", "info": "⚪"}
-
-
-def _sanitize_slug(s: str) -> str:
-    """Replace Windows-illegal filename characters with underscores."""
-    return re.sub(r"[^a-z0-9._-]", "_", s.lower())
 
 
 def _load_findings(summary: dict) -> list[Finding]:
