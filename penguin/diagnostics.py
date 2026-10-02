@@ -18,8 +18,10 @@ logger = logging.getLogger("penguin.diagnostics")
 LEDGER_NAME = "_tool_ledger.jsonl"
 MANIFEST_NAME = "_manifest.json"
 
-# Outcome labels emitted by tools._base.classify_outcome, in report order.
-OUTCOMES = ("ok", "empty", "timeout", "permanent", "missing", "skipped_no_proxy", "error")
+# Outcome labels emitted by tools._base.classify_outcome, in report order. Keep
+# in lockstep with classify_outcome's return values -- an outcome it can emit
+# that is absent here is silently remapped to "error" in rollup().
+OUTCOMES = ("ok", "timeout", "permanent", "missing", "skipped_no_proxy", "error")
 
 
 def read_ledger(run_dir: Path) -> list[dict]:
