@@ -105,8 +105,12 @@ def subdomain_sources(run_dir: Path) -> dict[str, int]:
         return {}
     counts: dict[str, int] = {}
     for f in sorted(sub_dir.glob("*.txt")):
-        # Skip the merged/seed helper files -- they are inputs, not sources.
-        if f.name in {"all_for_perms.txt", "brute_wordlist.txt", "perm_words.txt"}:
+        # Skip inputs/intermediates, not discovery sources: the brute/perm
+        # wordlists, the perms input, and gotator's UNRESOLVED candidate list
+        # (gotator_perms.txt can be millions of guesses). gotator_resolved.txt
+        # (names that actually resolved) IS a real source and is kept.
+        if f.name in {"all_for_perms.txt", "brute_wordlist.txt", "perm_words.txt",
+                      "gotator_perms.txt"}:
             continue
         try:
             n = sum(1 for ln in f.read_text(encoding="utf-8", errors="ignore").splitlines() if ln.strip())
