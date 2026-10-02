@@ -258,17 +258,18 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
     # SANs found on certs are an extra subdomain-discovery vector: in-scope ones
     # are folded back into the subdomain set (and thus the cross-run accumulator).
     #
-    # openssl s_client opens a direct TCP connection to the target:443 that the
-    # SOCKS/HTTP proxy pool can't carry, so running it while proxying is on would
-    # leak the operator's real IP -- the exact failure the proxy layer exists to
-    # prevent. Honor that invariant: skip TLS cert intel when proxies are enabled.
+    # openssl s_client opens a direct TCP connection to target:443 that the
+    # SOCKS/HTTP pool can't carry, so the wrapper runs it with proxy=False -- it
+    # egresses through the host's own system/TUN proxy exactly like the direct
+    # dig DNS-intel and the un-proxied crt.sh/findomain OSINT sources already do,
+    # so it exposes the operator IP no more than those. (It is NOT gated on
+    # proxies.enabled: doing so silently disabled cert-expiry findings AND the
+    # SAN subdomain-discovery vector on every default, proxied run -- while dig,
+    # nmap and masscan, equally unproxyable and target-facing, ran direct anyway.
+    # That inconsistency is resolved by running TLS intel direct, like them.)
     cap = cfg.general.max_hosts_per_block or 25
     tls_targets = list(dict.fromkeys(domains + results["resolved"][:cap]))
     san_new: set[str] = set()
-    if cfg.proxies.enabled:
-        logger.info("[block1] TLS cert intel skipped: proxies enabled and openssl "
-                    "s_client cannot be routed through the pool (would leak real IP)")
-        tls_targets = []
     for tgt in tls_targets:
         try:
             cert = tls.fetch_and_parse(ctx, tgt)
