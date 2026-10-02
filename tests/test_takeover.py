@@ -56,3 +56,34 @@ def test_subzy_takeover_builds_correct_argv(tmp_path, monkeypatch):
     tk.subzy_takeover(ctx, tmp_path / "hosts.txt", tmp_path / "out.txt")
     assert seen["tool"] == "subzy"
     assert "--targets" in seen["cmd"]
+
+
+def test_parse_subzy_json_array(tmp_path):
+    out = tmp_path / "subzy.json"
+    out.write_text(json.dumps([
+        {"Subdomain": "gone.ex.com", "Status": "VULNERABLE", "Engine": "GitHub"},
+        {"Subdomain": "safe.ex.com", "Status": "NOT VULNERABLE"},   # excluded
+        {"subdomain": "gone.ex.com", "status": "vulnerable"},        # dup (case-insens)
+        {"subdomain": "two.ex.com", "status": "VULNERABLE"},
+        "garbage-not-a-dict",
+    ]), encoding="utf-8")
+    assert tk.parse_subzy(out) == ["gone.ex.com", "two.ex.com"]
+
+
+def test_parse_subzy_plain_text(tmp_path):
+    out = tmp_path / "subzy.txt"
+    out.write_text(
+        "[ VULNERABLE ] https://gone.ex.com (Engine: GitHub)\n"
+        "[ NOT VULNERABLE ] https://safe.ex.com\n"
+        "[ VULNERABLE ] dead.ex.com\n"
+        "random noise line\n",
+        encoding="utf-8",
+    )
+    assert tk.parse_subzy(out) == ["https://gone.ex.com", "dead.ex.com"]
+
+
+def test_parse_subzy_missing_and_malformed(tmp_path):
+    assert tk.parse_subzy(tmp_path / "nope.json") == []
+    bad = tmp_path / "bad.json"
+    bad.write_text("[ this is not json", encoding="utf-8")   # looks like JSON, isn't
+    assert tk.parse_subzy(bad) == []

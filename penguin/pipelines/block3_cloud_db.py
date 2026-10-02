@@ -62,26 +62,33 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
             pt.masscan(ctx, ip_file, masscan_out, ports=DB_PORTS)
             nmap_out = state.path("cloud/db_nmap.txt")
             pt.nmap_nse(ctx, ip_file, nmap_out, ports=DB_PORTS)
-            if nmap_out.exists():
-                results["open_db"].append(str(nmap_out))
+            # Record the actual open host:port services, NOT the output-file path:
+            # masscan/nmap always write their file (even with zero open ports), so
+            # appending the path on .exists() reported a false "open database" on
+            # every run with hosts. Parse the real hits instead.
+            results["open_db"].extend(pt.parse_nmap_open(nmap_out))
 
             redis_hosts: set[str] = set()
             if masscan_out.exists():
-                results["open_db"].append(str(masscan_out))
-                for line in masscan_out.read_text(encoding="utf-8").splitlines():
-                    # masscan -oL format: "open tcp <port> <ip> <timestamp>"
-                    parts = line.split()
-                    if len(parts) >= 4 and parts[0] == "open" and parts[2] == "6379":
-                        redis_hosts.add(parts[3])
+                masscan_open = pt.parse_masscan_open(masscan_out)
+                results["open_db"].extend(masscan_open)
+                for hp in masscan_open:
+                    ip, _, port = hp.rpartition(":")
+                    if port == "6379":
+                        redis_hosts.add(ip)
             if redis_hosts:
+                # Confirm each candidate redis actually answers unauthenticated
+                # (INFO) before trusting it; the host:port is already recorded
+                # above, so the INFO dump is kept on disk as evidence only.
                 redis_out = state.path("cloud/redis_info.txt")
                 for rh in sorted(redis_hosts):
                     info = pt.redis_cli(ctx, rh)
                     if info:
                         with open(redis_out, "a", encoding="utf-8") as fh:
                             fh.write(f"=== {rh} ===\n{info}\n")
-                if redis_out.exists():
-                    results["open_db"].append(str(redis_out))
+            # nmap and masscan scan the same IPs/ports, so their hits overlap --
+            # dedup while preserving order.
+            results["open_db"] = list(dict.fromkeys(results["open_db"]))
 
     # ---- bucket discovery ----
     bucket_out = state.path("cloud/buckets.txt")
