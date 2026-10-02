@@ -113,8 +113,32 @@ class ToolContext:
         except Exception:  # noqa - telemetry must never break a recon run
             logger.debug("[ledger] failed to record %s", tool, exc_info=True)
 
+    # The ONLY tools that can actually route a request through a SOCKS/HTTP proxy
+    # via a CLI flag. The flag string per tool is built in proxy_flag(); the set
+    # of keys is the single source of truth for "is this tool proxyable at all".
+    # Anything not here (masscan, nmap, puredns, amass, dig, subzy, arjun,
+    # feroxbuster, the cloud/git/secret scanners, ...) has no proxy flag, so it
+    # must NOT be routed into the proxy path: doing so would burn a rotation pick
+    # on a proxy that is never applied and -- far worse -- cause the tool to be
+    # skipped entirely ("no proxy available") whenever the free pool is empty,
+    # silently gutting core coverage (e.g. puredns resolution, nmap scanning).
+    _PROXY_FLAG_TOOLS = frozenset({
+        "httpx", "nuclei", "subfinder", "dnsx", "katana", "gau", "ffuf", "curl",
+        "dalfox",
+    })
+
+    def supports_proxy_flag(self, tool: str) -> bool:
+        """True only for tools that have a real CLI proxy flag (see proxy_flag)."""
+        return tool in self._PROXY_FLAG_TOOLS
+
     def proxy_applies(self, tool: str) -> bool:
-        return self.cfg.proxies.enabled and bool(self.cfg.tool_setting(tool, "proxy", True))
+        # A tool is proxy-routed only when proxies are enabled, config doesn't
+        # opt it out, AND it can actually carry a proxy flag. The last clause is
+        # what stops an un-proxyable tool from being gated on (and skipped by)
+        # the pool regardless of what config.tools says for it.
+        return (self.cfg.proxies.enabled
+                and bool(self.cfg.tool_setting(tool, "proxy", True))
+                and self.supports_proxy_flag(tool))
 
     def proxy_for(self, tool: str) -> Optional[str]:
         if not self.proxy_applies(tool):
@@ -123,13 +147,16 @@ class ToolContext:
         return pool.pick()
 
     def proxy_flag(self, tool: str, proxy: Optional[str]) -> list[str]:
-        """Return the correct proxy flag for a given tool."""
+        """Return the correct proxy flag for a given tool.
+
+        Only tools in ``_PROXY_FLAG_TOOLS`` have one. amass v4 and puredns, for
+        example, dropped proxy support from their CLI entirely (passing -proxy
+        makes amass fail with "flag provided but not defined" / puredns print the
+        usage screen and exit nonzero), so they are deliberately absent and run
+        direct -- see proxy_applies, which keeps them out of the proxy path.
+        """
         if not proxy:
             return []
-        # amass v4 and puredns dropped proxy support from their CLI entirely --
-        # passing -proxy makes them fail with "flag provided but not defined"
-        # (amass) / print the usage screen and exit nonzero (puredns), so
-        # neither is listed here even though they're in config.tools.
         mapping = {
             "httpx": ["-proxy", proxy],
             "nuclei": ["-proxy", proxy],
@@ -168,7 +195,15 @@ class ToolContext:
         # though the tool is proxy-eligible in config -- used by passive OSINT
         # lookups (e.g. crt.sh) that hit a public aggregator, not the target,
         # and simply don't survive the free SOCKS pool.
-        use_proxy = self.proxy_applies(tool) if proxy is None else (proxy and self.cfg.proxies.enabled)
+        # An explicit proxy=True can only force-*enable* a tool that is actually
+        # proxyable -- otherwise we'd re-introduce the pool-gating/skip problem
+        # proxy_applies() exists to prevent. proxy=False always force-disables.
+        if proxy is None:
+            use_proxy = self.proxy_applies(tool)
+        elif proxy:
+            use_proxy = self.cfg.proxies.enabled and self.supports_proxy_flag(tool)
+        else:
+            use_proxy = False
         if not use_proxy:
             # Retries in this codebase exist for exactly one reason: to re-pick a
             # fresh proxy between attempts (the loop below). An un-proxied tool

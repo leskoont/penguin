@@ -100,19 +100,32 @@ tools:
   # expose the operator IP any more than the un-proxied crt.sh/findomain do.
   subfinder: {proxy: false, threads: 15}
   httpx: {proxy: true, threads: 15}
-  puredns: {proxy: true}
   dnsx: {proxy: true}
-  amass: {proxy: true}
   ffuf: {proxy: true}
   katana: {proxy: true}
   gau: {proxy: true}
   nuclei: {proxy: true}
-  # these have no CLI proxy flag of their own (see ToolContext.proxy_flag
-  # mapping) -- proxy:false avoids burning a pick() from the rotation for a
-  # proxy that would never be applied.
+  # Everything below has NO CLI proxy flag of its own. The authoritative list of
+  # proxyable tools is ToolContext._PROXY_FLAG_TOOLS; a tool absent from it is
+  # never routed through the pool regardless of this setting (see
+  # ToolContext.proxy_applies), so it is neither skipped when the pool is empty
+  # nor charged a pick() for a proxy that would never be applied. proxy:false is
+  # kept here as explicit, self-documenting intent and defense-in-depth.
+  #
+  # amass v4 and puredns dropped -proxy from their CLI entirely (amass: "flag
+  # provided but not defined"; puredns prints usage and exits nonzero), so they
+  # run direct like the others -- NOT proxy:true, which used to silently skip
+  # them (incl. the core resolver) whenever the free SOCKS pool was empty.
+  amass: {proxy: false}
+  puredns: {proxy: false}
   linkfinder: {proxy: false}
   secretfinder: {proxy: false}
   jsluice: {proxy: false}
+  subjs: {proxy: false}
+  waybackurls: {proxy: false}
+  assetfinder: {proxy: false}
+  findomain: {proxy: false}
+  chaos: {proxy: false}
   gitdumper: {proxy: false}
   cloudflair: {proxy: false}
   trufflehog: {proxy: false}
@@ -122,13 +135,21 @@ tools:
   gotator: {proxy: false}
   hakrawler: {proxy: false}
   paramspider: {proxy: false}
+  arjun: {proxy: false}
   x8: {proxy: false}
+  feroxbuster: {proxy: false}
+  dig: {proxy: false}
+  subzy: {proxy: false}
+  nmap: {proxy: false}
   masscan: {proxy: false}
   redis-cli: {proxy: false}
+  kr: {proxy: false}
+  grpcurl: {proxy: false}
+  aws: {proxy: false}
+  cloud_enum: {proxy: false}
   s3scanner: {proxy: false}
   bucketloot: {proxy: false}
   trivy: {proxy: false}
-  grpcurl: {proxy: false}
 
 proxies:
   enabled: true                       # fetch + validate + apply on EVERY run
