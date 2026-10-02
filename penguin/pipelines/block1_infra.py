@@ -242,9 +242,16 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
         tk_out = state.path("takeovers.jsonl")
         if tk.nuclei_takeover(ctx, takeover_in, tk_out):
             results["takeovers"] = tk.parse_nuclei_takeovers(tk_out)
-            if results["takeovers"]:
-                logger.warning("[block1] %d potential subdomain takeover(s)",
-                               len(results["takeovers"]))
+        # Second opinion: subzy (if installed). Merge + dedup with nuclei's hits
+        # so a takeover only one engine catches is still reported, exactly once.
+        subzy_out = state.path("subzy_takeovers.json")
+        if tk.subzy_takeover(ctx, takeover_in, subzy_out):
+            extra = tk.parse_subzy(subzy_out)
+            if extra:
+                results["takeovers"] = list(dict.fromkeys(results["takeovers"] + extra))
+        if results["takeovers"]:
+            logger.warning("[block1] %d potential subdomain takeover(s)",
+                           len(results["takeovers"]))
 
     # ---- TLS / certificate intelligence ----
     # Apex domains + a bounded sample of resolved hosts (one cert fetch each).

@@ -1,10 +1,14 @@
 """Secret / JS analysis and git-secret scanners (Block 2.3, Block 4.2)."""
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
 from typing import Optional
 
 from ._base import ToolContext, ok_path
+
+logger = logging.getLogger("penguin.tools.secrets")
 
 
 def linkfinder(ctx: ToolContext, js_file: Path) -> Optional[str]:
@@ -48,6 +52,40 @@ def trufflehog_git(ctx: ToolContext, target: str, out: Path) -> Optional[Path]:
         out.write_text(r.stdout, encoding="utf-8")
         return out
     return None
+
+
+def gitleaks_hits(report: Path) -> int:
+    """Number of leaks in a gitleaks JSON report (0 for a clean/empty/missing
+    report). gitleaks always writes the report file -- an empty ``[]`` when it
+    finds nothing -- so the file merely *existing* must never be read as a hit."""
+    if not report or not report.exists():
+        return 0
+    try:
+        data = json.loads(report.read_text(encoding="utf-8", errors="ignore") or "[]")
+    except (ValueError, TypeError):
+        return 0
+    return len(data) if isinstance(data, list) else 0
+
+
+def trufflehog_hits(report: Path) -> int:
+    """Number of verified secrets in a trufflehog ``--json`` report (JSONL, one
+    finding per line). Empty/clean output is an empty file, which is 0 hits."""
+    if not report or not report.exists():
+        return 0
+    n = 0
+    for line in report.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        # trufflehog emits one JSON object per detected secret; ignore any
+        # non-object bookkeeping lines some versions interleave.
+        if isinstance(row, dict) and row:
+            n += 1
+    return n
 
 
 def gitleaks(ctx: ToolContext, source: Path, out: Path) -> Optional[Path]:

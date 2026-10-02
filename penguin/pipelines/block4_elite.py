@@ -125,9 +125,14 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
                 if gc_out and gc_out.exists():
                     th = sc.trufflehog_git(ctx, str(dump_dir), state.path("gitcicd") / f"trufflehog_{sub_safe}.json")
                     gl = sc.gitleaks(ctx, dump_dir, state.path("gitcicd") / f"gitleaks_{sub_safe}.json")
-                    for r in (th, gl):
-                        if r and r.exists():
-                            results["secrets"].append(str(r))
+                    # Both scanners always write a report file (empty when clean),
+                    # so record a secret ONLY when the report actually contains
+                    # hits -- otherwise every dumped repo would raise a false
+                    # critical "secret" finding (and a critical alert).
+                    if th and sc.trufflehog_hits(th) > 0:
+                        results["secrets"].append(str(th))
+                    if gl and sc.gitleaks_hits(gl) > 0:
+                        results["secrets"].append(str(gl))
 
     # ---- exposed docker registries (best-effort hostname guesses) ----
     registry_dir = state.sub("gitcicd/registries")

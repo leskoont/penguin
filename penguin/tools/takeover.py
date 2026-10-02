@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -58,4 +59,53 @@ def parse_nuclei_takeovers(out: Path) -> list[str]:
         if asset and asset not in seen:
             seen.add(asset)
             hosts.append(asset)
+    return hosts
+
+
+def parse_subzy(out: Path) -> list[str]:
+    """Extract VULNERABLE subdomains from subzy ``--output``.
+
+    subzy's output format varies by version: recent builds write a JSON array of
+    objects (keys like ``subdomain``/``status``, capitalization differs across
+    versions), older ones a plain ``[ VULNERABLE ] https://host`` text line. Parse
+    both, keep only entries whose status is VULNERABLE (never ``NOT VULNERABLE``),
+    and return the deduped assets. Malformed content never raises."""
+    if not out.exists():
+        return []
+    text = out.read_text(encoding="utf-8", errors="ignore")
+    hosts: list[str] = []
+    seen: set[str] = set()
+
+    def _add(h: str) -> None:
+        h = (h or "").strip()
+        if h and h not in seen:
+            seen.add(h)
+            hosts.append(h)
+
+    stripped = text.strip()
+    parsed_json = False
+    if stripped.startswith("["):
+        try:
+            data = json.loads(stripped)
+            parsed_json = True
+        except (ValueError, TypeError):
+            parsed_json = False
+        if parsed_json and isinstance(data, list):
+            for row in data:
+                if not isinstance(row, dict):
+                    continue
+                low = {str(k).lower(): v for k, v in row.items()}
+                status = str(low.get("status", "")).upper()
+                if "VULNERABLE" in status and "NOT" not in status:
+                    _add(str(low.get("subdomain") or low.get("host")
+                             or low.get("target") or ""))
+    if not parsed_json:
+        for line in text.splitlines():
+            up = line.upper()
+            if "VULNERABLE" not in up or "NOT VULNERABLE" in up:
+                continue
+            m = re.search(r"https?://[^\s\]\)]+", line) or re.search(
+                r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+", line)
+            if m:
+                _add(m.group(0))
     return hosts
