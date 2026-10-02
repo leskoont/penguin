@@ -55,8 +55,12 @@ class TestSubdomainSources:
         (sub / "subfinder_x.txt").write_text("a.x.com\nb.x.com\n", encoding="utf-8")
         (sub / "crtsh_x.txt").write_text("c.x.com\n", encoding="utf-8")
         (sub / "brute_wordlist.txt").write_text("admin\napi\ndev\n", encoding="utf-8")  # helper, skipped
+        (sub / "perm_words.txt").write_text("dev\nstg\n", encoding="utf-8")            # helper, skipped
+        (sub / "all_for_perms.txt").write_text("a.x.com\n", encoding="utf-8")          # input, skipped
+        (sub / "gotator_perms.txt").write_text("g1.x.com\ng2.x.com\ng3.x.com\n", encoding="utf-8")  # candidates, skipped
+        (sub / "gotator_resolved.txt").write_text("real.x.com\n", encoding="utf-8")    # real source, kept
         counts = diagnostics.subdomain_sources(tmp_path)
-        assert counts == {"subfinder_x.txt": 2, "crtsh_x.txt": 1}
+        assert counts == {"subfinder_x.txt": 2, "crtsh_x.txt": 1, "gotator_resolved.txt": 1}
 
     def test_missing_dir_returns_empty(self, tmp_path):
         assert diagnostics.subdomain_sources(tmp_path) == {}
