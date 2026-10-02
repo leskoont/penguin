@@ -122,3 +122,44 @@ class TestKbEndToEnd:
         a = A.analyze(fs)
         assert a["risk_band"] in ("high", "critical")
         assert any(i["title"] == "Actively-exploited CVE present" for i in a["insights"])
+
+
+class TestPreciseExtractors:
+    """Tech must come from structured detector output only -- never page titles."""
+
+    def test_httpx_csv_uses_tech_column_only(self):
+        csv = ('timestamp,url,title,technologies\n'
+               '2026,https://ex.com,"Jenkins Dashboard","Apache HTTPD:2.4.49,PHP:7.4"\n')
+        got = K.extract_from_httpx_csv(csv)
+        assert ("apache", "2.4.49") in got and ("php", "7.4") in got
+        # the "Jenkins" TITLE must not become a product
+        assert all(p != "jenkins" for p, _ in got)
+
+    def test_httpx_csv_no_tech_column_returns_empty(self):
+        csv = 'url,title\nhttps://ex.com,"Grafana login"\n'
+        assert K.extract_from_httpx_csv(csv) == []
+
+    def test_httpx_csv_malformed(self):
+        assert K.extract_from_httpx_csv("") == []
+        K.extract_from_httpx_csv('a,b\n"unterminated')  # must not raise
+
+    def test_nuclei_bracket_tokens(self):
+        nuc = ("[tech-detect:apache] [http] [info] https://ex.com\n"
+               "[nginx] [http] [info] https://b.ex.com\n"
+               "[waf-detect:cloudflare] [http] [info] https://ex.com\n")
+        got = {p for p, _ in K.extract_from_nuclei(nuc)}
+        assert "apache" in got and "nginx" in got
+        # url/severity tokens must not leak as products
+        assert "http" not in got and "info" not in got
+
+    def test_nuclei_title_not_parsed(self):
+        # a nuclei info line whose URL path says 'jenkins' must not yield jenkins
+        nuc = "[ssl-detect] [ssl] [info] https://ci.ex.com/jenkins/login\n"
+        assert all(p != "jenkins" for p, _ in K.extract_from_nuclei(nuc))
+
+    def test_title_leak_rejected_end_to_end(self):
+        kb = KnowledgeBank.load()
+        csv = 'url,title,technologies\nhttps://x,"Tomcat Manager",""\n'
+        vec = kb.match(K.extract_from_httpx_csv(csv))
+        # empty tech column -> no default_credentials for tomcat from the title
+        assert all(v["kind"] != "default_credentials" for v in vec)

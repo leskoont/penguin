@@ -121,9 +121,12 @@ def normalize_tech(label: str) -> tuple[str, Optional[str]]:
 
 
 def extract_technologies(*texts: str) -> list[tuple[str, Optional[str]]]:
-    """Pull (product, version) pairs out of httpx tech columns / nuclei tech /
-    technologies.txt content. Accepts bracketed httpx form '[Apache:2.4.49]' and
-    plain lines. Deduplicated, unknown products dropped."""
+    """Generic bracket/line tech extractor (used for tests and as a fallback).
+
+    Accepts bracketed httpx form '[Apache:2.4.49]' and plain 'name version'
+    lines. Deduplicated; unknown products dropped. NOTE: this is permissive and
+    will pick a product out of free text, so the pipeline uses the precise
+    header-/token-based extractors below for real tool output instead."""
     found: dict[tuple, None] = {}
     for text in texts:
         for raw in re.split(r"[\n,\]]", text or ""):
@@ -131,6 +134,65 @@ def extract_technologies(*texts: str) -> list[tuple[str, Optional[str]]]:
             if not raw:
                 continue
             prod, ver = normalize_tech(raw)
+            if prod:
+                found[(prod, ver)] = None
+    return list(found.keys())
+
+
+def extract_from_httpx_csv(csv_text: str) -> list[tuple[str, Optional[str]]]:
+    """Extract (product, version) pairs from ONLY the technologies column of an
+    httpx ``-csv`` file (located by header name), so page titles / server banners
+    in other columns can't masquerade as detected tech."""
+    import csv as _csv
+    import io
+    found: dict[tuple, None] = {}
+    try:
+        reader = _csv.reader(io.StringIO(csv_text or ""))
+        rows = list(reader)
+    except (ValueError, _csv.Error):
+        return []
+    if not rows:
+        return []
+    header = [h.strip().lower() for h in rows[0]]
+    tech_idx = next((i for i, h in enumerate(header) if "tech" in h), None)
+    if tech_idx is None:
+        return []  # no tech column -> contribute nothing (never guess from titles)
+    for row in rows[1:]:
+        if tech_idx >= len(row):
+            continue
+        cell = row[tech_idx].strip().strip('"').strip("[]")
+        for tok in re.split(r"[,;|]", cell):
+            prod, ver = normalize_tech(tok)
+            if prod:
+                found[(prod, ver)] = None
+    return list(found.keys())
+
+
+# nuclei tech-detect lines look like:
+#   [tech-detect:apache] [http] [info] https://x   (template-id carries the tech)
+#   [nginx] [http] [info] https://x
+#   [waf-detect:cloudflare] ...
+_NUCLEI_TOKEN_RE = re.compile(r"\[([^\]]+)\]")
+
+
+def extract_from_nuclei(text: str) -> list[tuple[str, Optional[str]]]:
+    """Extract products from nuclei ``http/technologies/`` output by reading the
+    template-id / matcher tokens (``[tech-detect:apache]``, ``[nginx]``), not the
+    URL/severity. Only known products survive the alias filter."""
+    found: dict[tuple, None] = {}
+    _skip = {"http", "https", "tcp", "info", "low", "medium", "high", "critical", "unknown"}
+    for line in (text or "").splitlines():
+        toks = _NUCLEI_TOKEN_RE.findall(line)
+        for tok in toks:
+            tok = tok.strip().lower()
+            # 'tech-detect:apache' / 'waf-detect:cloudflare' -> take the value
+            if ":" in tok:
+                tok = tok.split(":", 1)[1].strip()
+            if not tok or tok in _skip or tok.startswith(("http", "tcp")):
+                continue
+            # strip common detection-template suffixes
+            tok = re.sub(r"-(detect|version|detection|tech)$", "", tok)
+            prod, ver = normalize_tech(tok)
             if prod:
                 found[(prod, ver)] = None
     return list(found.keys())

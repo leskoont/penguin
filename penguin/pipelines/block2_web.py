@@ -361,19 +361,22 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         state.save_json("content_issues.json", results["content_issues"])
 
     # ---- knowledge-bank comparison (detected tech -> known CVEs / KEV / creds) ----
-    from ..knowledge import KnowledgeBank, extract_technologies
+    from ..knowledge import KnowledgeBank, extract_from_httpx_csv, extract_from_nuclei
     extra_dirs = [cfg.path(cfg.general.knowledge_dir)] if cfg.general.knowledge_dir else []
     kb = KnowledgeBank.load(extra_dirs)
-    tech_txt = ""
+    # Pull tech ONLY from the structured detectors (nuclei tech templates + the
+    # httpx CSV technologies column), never from free-text titles/banners -- that
+    # would let a page title masquerade as installed software.
+    techs: dict = {}
     techfile = state.path("technologies.txt")
     if techfile.exists():
-        tech_txt = techfile.read_text(encoding="utf-8", errors="ignore")
-    csv_txt = ""
+        for t in extract_from_nuclei(techfile.read_text(encoding="utf-8", errors="ignore")):
+            techs[t] = None
     csvfile = state.path(ARTIFACTS.LIVE_HTTPX_CSV)
     if csvfile.exists():
-        csv_txt = csvfile.read_text(encoding="utf-8", errors="ignore")
-    techs = extract_technologies(tech_txt, csv_txt)
-    results["kb_findings"] = kb.match(techs)
+        for t in extract_from_httpx_csv(csvfile.read_text(encoding="utf-8", errors="ignore")):
+            techs[t] = None
+    results["kb_findings"] = kb.match(list(techs))
     if results["kb_findings"]:
         state.save_json("kb_findings.json", results["kb_findings"])
         logger.warning("[block2] knowledge-bank: %d derived vectors (CVE/KEV/default-creds)",
