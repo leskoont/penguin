@@ -15,6 +15,7 @@ from ..config import Config
 from ..parallel import run_parallel
 from ..state import ARTIFACTS, RunState
 from ..tools import dnsintel as di
+from ..tools import osint as oi
 from ..tools import probe as pb
 from ..tools import resolve as rs
 from ..tools import subdomain as sd
@@ -119,6 +120,13 @@ def run_block1(cfg: Config, state: RunState, target: dict) -> dict:
             partial(sd.chaos, ctx, domain, sub_dir / f"chaos_{domain}.txt"),
             partial(sd.crtsh, ctx, domain, sub_dir / f"crtsh_{domain}.txt"),
             partial(sd.amass_intel, ctx, domain.split(".")[0], sub_dir / f"amass_intel_{domain}.txt"),
+            # pure-curl OSINT aggregators (no binary dependency) -- same
+            # direct-fetch policy as crt.sh; each writes its own file, so the
+            # subdomains/ glob merge below picks them up automatically.
+            partial(oi.otx_passive_dns, ctx, domain, sub_dir / f"otx_{domain}.txt"),
+            partial(oi.rapiddns, ctx, domain, sub_dir / f"rapiddns_{domain}.txt"),
+            partial(oi.hackertarget, ctx, domain, sub_dir / f"hackertarget_{domain}.txt"),
+            partial(oi.urlscan_search, ctx, domain, sub_dir / f"urlscan_{domain}.txt"),
         ]
     run_parallel(passive_tasks, max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                  label="block1 passive enum")
