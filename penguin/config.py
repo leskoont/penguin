@@ -185,6 +185,16 @@ class GeneralConfig:
     # feroxbuster is a redundant dir brute vs ffuf; keep it off by default and
     # enable only when a second engine is explicitly wanted (issue #2).
     dirfuzz_feroxbuster: bool = False
+    # Deep recon tier (--deep): the extra *target-facing* vectors on top of the
+    # always-on passive OSINT fan-out -- httpx probing of common alternate web
+    # ports on every known live host. Cheap passive aggregator lookups (OTX,
+    # RapidDNS, urlscan, Wayback CDX) are NOT gated on this: they never touch
+    # the target. Off by default to keep the SLIRP-safe posture unchanged.
+    deep: bool = False
+    # Block5 (feedback pass) host cap: how many straggler subdomains to
+    # re-resolve/probe and how many newly-live hosts to re-check. None/0 for
+    # unlimited. Keeps the feedback re-run bounded on huge subdomain sets.
+    feedback_max_hosts: Optional[int] = 50
 
     def clamp_workers(self, requested: int) -> int:
         """Clamp a fan-out worker count to the global concurrency ceiling.
@@ -307,7 +317,7 @@ def apply_net_profile(cfg: "Config", name: str) -> bool:
 class Config:
     general: GeneralConfig = field(default_factory=GeneralConfig)
     stages: dict = field(default_factory=lambda: {
-        "infra": True, "web": True, "cloud_db": True, "elite": True
+        "infra": True, "web": True, "cloud_db": True, "elite": True, "feedback": True
     })
     tools: dict = field(default_factory=dict)
     proxies: ProxyConfig = field(default_factory=ProxyConfig)

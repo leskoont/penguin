@@ -15,6 +15,7 @@ from ..tools import api as ap
 from ..tools import content as ct
 from ..tools import contentintel as ci
 from ..tools import nuclei_custom as nu
+from ..tools import osint as oi
 from ..tools import probe as pb
 from ..tools import secrets as sc
 from ..tools import webchecks as wc
@@ -160,22 +161,50 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     max_hosts = cfg.general.max_hosts_per_block
     limited_hosts = _select_hosts(hosts, max_hosts)
 
+    # ---- deep: alternate web-port probing (--deep) ----
+    # Dev/admin/staging apps frequently listen on non-standard ports the
+    # standard 80/443 probe never touches. Target-facing, so it sits behind
+    # the deep tier rather than running by default. SLIRP-safe by
+    # construction: the host:port pair list is capped (ALT_PORT_MAX_TARGETS)
+    # and httpx_ports runs at half the thread budget.
+    if cfg.general.deep and limited_hosts:
+        pairs = pb.alt_port_targets(limited_hosts, pb.ALT_WEB_PORTS)
+        if pairs:
+            alt_in = state.path("alt_port_hosts.txt")
+            alt_in.write_text("\n".join(pairs) + "\n", encoding="utf-8")
+            alt_csv = state.path("live/httpx_alt_ports.csv")
+            if pb.httpx_ports(ctx, alt_in, alt_csv):
+                alt_urls = read_live_urls(alt_csv)
+                fresh = [u for u in alt_urls if u not in set(hosts)]
+                if fresh:
+                    logger.info("[block2] alt-port probe: %d new live host:port URLs", len(fresh))
+                    hosts = sorted(set(hosts) | set(fresh))
+                    hosts_file.write_text("\n".join(hosts) + "\n", encoding="utf-8")
+                    limited_hosts = _select_hosts(hosts, max_hosts)
+
     js_dir = state.sub("js")
     js_all = state.path("js_urls.txt")
     lines: set[str] = set()
 
-    def _collect_js_for_host(h: str) -> None:
-        # Each host writes its own distinct output files, so hosts overlap
+    # Archive sources (gau/waybackurls/paramspider) are keyed by DOMAIN, not
+    # URL -- dedupe the hostnames first. After the deep alt-port merge the
+    # hosts list can hold a.com and a.com:8443 together; without dedup two
+    # parallel tasks would write the same gau_<dom>.txt / paramspider output
+    # and clobber each other, and paramspider would get an invalid
+    # host:port "domain".
+    archive_domains = sorted({re.sub(r"^https?://", "", h).split("/")[0].split(":")[0]
+                              for h in limited_hosts if h})
+
+    def _collect_js_for_domain(dom: str) -> None:
+        # Each domain writes its own distinct output files, so domains overlap
         # safely. paramspider relocates results/<domain>.txt internally but the
-        # domain is unique per host, so concurrent runs don't clash.
-        dom = re.sub(r"^https?://", "", h).split("/")[0]
+        # domain is unique per task, so concurrent runs don't clash.
         dom_safe = _sanitize_slug(dom)
-        # #83: removed dead r= assignments on gau/waybackurls (outputs written to file, not used)
         ct.gau(ctx, dom, js_dir / f"gau_{dom_safe}.txt")
         ct.waybackurls(ctx, dom, js_dir / f"wb_{dom_safe}.txt")
         ct.paramspider(ctx, dom, js_dir / f"paramspider_{dom_safe}.txt")
 
-    run_parallel([partial(_collect_js_for_host, h) for h in limited_hosts],
+    run_parallel([partial(_collect_js_for_domain, d) for d in archive_domains],
                  max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                  label="block2 js url collection")
     # katana takes -list of all hosts in one shot, not per-host
@@ -190,6 +219,28 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     if (js_dir / "subjs.txt").exists():
         lines |= {l.strip() for l in (js_dir / "subjs.txt").read_text(encoding="utf-8", errors="ignore").splitlines() if l.strip()}
     js_all.write_text("\n".join(sorted(lines)) + "\n", encoding="utf-8")
+
+    # ---- Wayback CDX endpoint mining (passive OSINT) ----
+    # The archive frequently preserves paths the live crawlers never see
+    # (retired endpoints, old APIs, parameterized URLs). Hits the Wayback
+    # Machine, never the target, so it runs by default like the other OSINT
+    # vectors. .js URLs fold into the JS set above; every URL feeds endpoints.
+    cdx_urls: set[str] = set()
+    apex = re.sub(r"^https?://", "", target["value"]).split("/")[0]
+    cdx_out = js_dir / f"cdx_{_sanitize_slug(apex)}.txt"
+    try:
+        if oi.wayback_cdx(ctx, apex, cdx_out):
+            cdx_urls = {ln.strip() for ln in cdx_out.read_text(encoding="utf-8", errors="ignore").splitlines()
+                        if ln.strip()}
+            js_hits = {u for u in cdx_urls if JS_RE.match(u)}
+            if js_hits:
+                fresh_js = js_hits - set(lines)
+                if fresh_js:
+                    lines |= fresh_js
+                    js_all.write_text("\n".join(sorted(lines)) + "\n", encoding="utf-8")
+            logger.info("[block2] wayback CDX: %d archived URLs for %s", len(cdx_urls), apex)
+    except Exception:  # noqa - OSINT mining is best-effort
+        logger.debug("[block2] wayback CDX mining failed", exc_info=True)
 
     js_alive = state.path("js_alive.txt")
     pb.httpx_simple(ctx, js_all, js_alive)
@@ -206,6 +257,9 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     endpoint_chunks: list[str] = []
     if param_urls:
         endpoint_chunks.append("\n".join(sorted(param_urls)) + "\n")
+    # wayback CDX archived URLs (all of them, not only the .js subset)
+    if cdx_urls:
+        endpoint_chunks.append("\n".join(sorted(cdx_urls)) + "\n")
     secret_chunks: list[str] = []
 
     js_dl_dir = state.sub("js/downloaded")
@@ -246,7 +300,7 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         secrets_file.write_text("".join(secret_chunks), encoding="utf-8")
     js_files = list(js_dl_dir.glob("*.js"))
     if js_files:
-        sc.jsluice(ctx, " ".join(str(f) for f in js_files), state.path("content/jsluice.txt"))
+        sc.jsluice(ctx, js_files, state.path("content/jsluice.txt"))
     if endpoints_file.exists():
         results["endpoints"] = endpoints_file.read_text(encoding="utf-8").splitlines()
     if secrets_file.exists():
@@ -276,24 +330,28 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
     per_host_threads = max(1, cfg.general.threads // fanout)
     per_host_rate = max(1, cfg.general.rate_limit // fanout)
 
-    def _dirfuzz_host(h: str) -> None:
+    def _dirfuzz_host(idx: int, h: str) -> None:
         # Tools within a single host stay serial (ffuf+feroxbuster hammer the
         # same target / WAF), but different hosts overlap via run_parallel.
+        # The slug alone can collide once the deep merge put both a.com and
+        # a.com:8443 in the host list (port stripped -> same slug), which
+        # would let two concurrent tasks clobber one output file -- key the
+        # filename on the host index too, same as the api probes below.
         safe = re.sub(r'[^a-z0-9]', '', h)
-        ct.ffuf_dirs(ctx, h, wl, state.path("content") / f"ffuf_{safe}.json",
+        ct.ffuf_dirs(ctx, h, wl, state.path("content") / f"ffuf_{idx}_{safe}.json",
                      threads=per_host_threads, rate=per_host_rate)
         # feroxbuster is a redundant dir brute by default; gate it behind a flag
         # (issue #2) so we don't pay its cost twice.
         if run_ferox:
-            ct.feroxbuster(ctx, h, wl, state.path("content") / f"ferox_{safe}.txt",
+            ct.feroxbuster(ctx, h, wl, state.path("content") / f"ferox_{idx}_{safe}.txt",
                            threads=per_host_threads, rate=per_host_rate)
-        ct.arjun(ctx, h, state.path("content") / f"arjun_{safe}.json",
+        ct.arjun(ctx, h, state.path("content") / f"arjun_{idx}_{safe}.json",
                  threads=per_host_threads)
         if params_wl.exists():
-            ct.x8(ctx, h, params_wl, state.path("content") / f"x8_{safe}.json")
+            ct.x8(ctx, h, params_wl, state.path("content") / f"x8_{idx}_{safe}.json")
 
     if wl.exists():
-        run_parallel([partial(_dirfuzz_host, h) for h in limited_hosts],
+        run_parallel([partial(_dirfuzz_host, i, h) for i, h in enumerate(limited_hosts)],
                      max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                      label="block2 dir fuzz")
     else:
@@ -323,7 +381,10 @@ def run_block2(cfg: Config, state: RunState, target: dict) -> dict:
         graphql_out = ap.graphql_introspection(ctx, h.rstrip("/") + "/graphql", api_dir / f"graphql_{idx}_{safe}.json")
         if graphql_out:
             found.append(str(graphql_out))
-        grpc_host = re.sub(r"^https?://", "", h).split("/")[0]
+        # grpcurl needs a bare host:443 target. Strip any URL port first --
+        # deep alt-port hosts (a.com:8443) would otherwise build the invalid
+        # "a.com:8443:443".
+        grpc_host = re.sub(r"^https?://", "", h).split("/")[0].split(":")[0]
         grpc_out = ap.grpcurl_list(ctx, f"{grpc_host}:443", api_dir / f"grpc_{idx}_{safe}.txt")
         if grpc_out:
             found.append(str(grpc_out))

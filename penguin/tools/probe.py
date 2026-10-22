@@ -53,6 +53,61 @@ def httpx_simple(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     return ok_path(r, out)
 
 
+# Common alternate web ports beyond 80/443 (deep tier): dev/admin panels and
+# staging apps routinely live here and never show up in the standard probe.
+ALT_WEB_PORTS = "81,3000,5000,8000,8008,8081,8080,8443,8888,9000,9090"
+
+# Hard ceiling on alt-port probe targets (hosts x ports). SLIRP-safety: the
+# standard httpx pass is bounded by the host count; multiplying by 11 ports
+# unbounded would multiply the connection bursts the same way. Pairs beyond
+# the cap are dropped (hosts are walked first, so every host gets its first
+# ports before any host gets extra depth).
+ALT_PORT_MAX_TARGETS = 600
+
+
+def alt_port_targets(hosts: list[str], ports: str = ALT_WEB_PORTS, *,
+                     max_targets: int = ALT_PORT_MAX_TARGETS) -> list[str]:
+    """Build the ``host:port`` pair list for the deep alt-port probe.
+
+    Ports any existing URL port is stripped (we probe the hostname fresh), and
+    the total is capped at ``max_targets``. Pure, so the pairing/capping is
+    unit-testable without touching the network."""
+    import re as _re
+    plist = [p.strip() for p in (ports or "").split(",") if p.strip().isdigit()]
+    seen: set[str] = set()
+    out: list[str] = []
+    for h in hosts or []:
+        host = _re.sub(r"^https?://", "", str(h)).split("/")[0].split(":")[0].strip()
+        if not host:
+            continue
+        for p in plist:
+            pair = f"{host}:{p}"
+            if pair not in seen:
+                seen.add(pair)
+                out.append(pair)
+                if len(out) >= max_targets:
+                    return out
+    return out
+
+
+def httpx_ports(ctx: ToolContext, pairs_file: Path, out_csv: Path, *,
+                threads: Optional[int] = None) -> Optional[Path]:
+    """Probe pre-built ``host:port`` pairs (deep tier).
+
+    Callers generate the pairs with :func:`alt_port_targets` (capped) rather
+    than relying on httpx's ``-ports`` flag, which is version-dependent. The
+    thread budget is halved by default: this probe runs *in addition to* the
+    main httpx pass over mostly-closed ports (each attempt lingers until
+    refused), so the same SLIRP ceiling that bounds the main pass gets its own
+    smaller share here, not a second full-size burst."""
+    if threads is None:
+        threads = max(1, ctx.cfg.general.threads // 2)
+    cmd = ["httpx", "-l", str(pairs_file), "-silent", "-threads", str(threads),
+           "-csv", "-o", str(out_csv)]
+    r = ctx.execute("httpx", cmd, timeout=900, log_stdout=False)
+    return ok_path(r, out_csv)
+
+
 def nuclei_tech(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
     # nuclei-templates' current layout nests everything under http/ (verified
     # live against the repo) -- a bare "technologies/" matches nothing, so

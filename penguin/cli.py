@@ -142,6 +142,7 @@ def cmd_run(
     refresh_proxies: bool = typer.Option(False, "--refresh-proxies"),
     dry_run: bool = typer.Option(False, "--dry-run", help="print the planned targets/stages/profile and exit without scanning"),
     active: bool = typer.Option(False, "--active", help="enable ACTIVE vuln scanning (dalfox XSS, nuclei DAST) -- authorized scope only"),
+    deep: bool = typer.Option(False, "--deep", help="enable deep recon tier: probe alternate web ports on live hosts"),
     resume: Optional[str] = typer.Option(None, "--resume", help="resume a crashed run dir (results/<target>/<run_id>), skipping completed blocks"),
     net_profile: Optional[str] = typer.Option(None, "--net-profile", help="network profile: minimal|slirp|wsl|vps (overrides config)"),
     throttle: bool = typer.Option(False, "--throttle", help="shortcut for --net-profile minimal (smallest network footprint)"),
@@ -158,6 +159,8 @@ def cmd_run(
     cfg = load(cfg_path, profile=_profile(net_profile, throttle))
     if active:
         cfg.general.active = True
+    if deep:
+        cfg.general.deep = True
     LOG.info("[net] profile=%s max_global_concurrency=%d active=%s",
              cfg.general.net_profile, cfg.general.max_global_concurrency, cfg.general.active)
     from .state import LockHeld, TargetLock
@@ -171,7 +174,7 @@ def cmd_run(
         return 1
 
     if dry_run:
-        stages = [n for n in ("infra", "web", "cloud_db", "elite") if cfg.stage_enabled(n)]
+        stages = [n for n in ("infra", "web", "cloud_db", "elite", "feedback") if cfg.stage_enabled(n)]
         console.print(f"[bold]DRY RUN[/] — net profile [cyan]{cfg.general.net_profile}[/] "
                       f"(max_global_concurrency={cfg.general.max_global_concurrency}, "
                       f"proxies={'on' if cfg.proxies.enabled else 'off'})")
@@ -411,21 +414,23 @@ def cmd_diagnose(
         return 1
 
     if manifest:
+        from rich.markup import escape as _esc
+
         net = manifest.get("net", {})
         px = manifest.get("proxies", {})
         console.print(
-            f"[bold]target[/] {manifest.get('target', {}).get('value', '?')}   "
-            f"[bold]profile[/] {net.get('profile', '?')}   "
+            f"[bold]target[/] {_esc(str(manifest.get('target', {}).get('value', '?')))}   "
+            f"[bold]profile[/] {_esc(str(net.get('profile', '?')))}   "
             f"[bold]duration[/] {manifest.get('duration_s', '?')}s   "
-            f"[bold]sha[/] {manifest.get('penguin_sha') or '?'}"
+            f"[bold]sha[/] {_esc(str(manifest.get('penguin_sha') or '?'))}"
         )
         console.print(
-            f"[bold]stages[/] {manifest.get('stages', {})}   "
+            f"[bold]stages[/] {_esc(str(manifest.get('stages', {})))}   "
             f"[bold]proxies[/] enabled={px.get('enabled')} pool={px.get('pool_size_at_start')}"
         )
         missing = [t for t, present in manifest.get("tools_present", {}).items() if not present]
         if missing:
-            console.print(f"[red]missing tools[/]: {', '.join(missing)}")
+            console.print(f"[red]missing tools[/]: {_esc(', '.join(missing))}")
 
     roll = diagnostics.rollup(records) if records else manifest.get("ledger") if manifest else None
     if roll and roll.get("totals", {}).get("calls"):
@@ -524,14 +529,20 @@ def cmd_analyze(
             findings.append(Finding.from_dict(d))
 
     a = analysis.analyze(findings, top=top)
+    from rich.markup import escape as _esc
+
     console.print(f"[bold]attack surface[/] — overall risk [bold]{a['overall']}[/] "
-                  f"([cyan]{a['risk_band'].upper()}[/]) from {len(findings)} findings")
+                  f"([cyan]{_esc(a['risk_band'].upper())}[/]) from {len(findings)} findings")
     console.print(risk_hosts_table(a["top_hosts"]))
     if a["insights"]:
         console.print("[bold]correlated insights (attack chains):[/]")
+        _sev_color = {"critical": "red", "high": "red", "medium": "yellow",
+                      "low": "cyan", "info": "dim"}
         for ins in a["insights"]:
-            console.print(f"  [{ins['severity'].upper()}] {ins['title']} — {ins['host']}")
-            console.print(f"      [dim]{ins['detail']}[/]")
+            color = _sev_color.get(ins["severity"], "white")
+            console.print(f"  [{color}]{_esc(ins['severity'].upper())}[/] "
+                          f"{_esc(ins['title'])} — {_esc(ins['host'])}")
+            console.print(f"      [dim]{_esc(ins['detail'])}[/]")
     else:
         console.print("[dim]no correlated insights[/]")
     return 0

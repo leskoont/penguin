@@ -84,12 +84,23 @@ general:
   # will try to auto-download one if missing, which can fail outright in
   # offline/sandboxed environments. Off by default; flip on if you want them.
   screenshots: false
+  # Deep recon tier (--deep): extra target-facing vectors (alternate web-port
+  # probing on live hosts). Passive OSINT aggregators always run regardless.
+  # SLIRP-safe by construction: the host:port pair list is hard-capped
+  # (600) and the probe runs at half the thread budget of the main pass.
+  deep: false
+  # Block5 (feedback) host cap for the re-resolve/re-probe of straggler
+  # subdomains discovered after block1's resolve stage.
+  feedback_max_hosts: 50
 
 stages:
   infra: true
   web: true
   cloud_db: true
   elite: true
+  # Re-runs driven by what blocks 1-4 found: straggler re-probe, open-port
+  # credential vectors, targeted nuclei CVE scan on KB-flagged tech.
+  feedback: true
 
 # per-tool settings; set proxy:false to exclude a tool from proxy routing
 tools:
