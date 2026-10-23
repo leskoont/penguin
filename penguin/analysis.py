@@ -161,12 +161,14 @@ def correlate(findings: Iterable[Finding]) -> list[Insight]:
                 "— exploited in the wild; patch/verify immediately.",
                 [f.asset for f in types["kev_exploited"]][:8]))
         # a known CVE next to an exposed data store / config widens the blast radius
-        if has("known_cve") and (has("open_database") or has("exposed_config")):
+        # (known_cve = KB-derived from tech fingerprints, nuclei_cve = confirmed
+        # by block5's targeted CVE-template scan -- both count)
+        if (has("known_cve") or has("nuclei_cve")) and (has("open_database") or has("exposed_config")):
             insights.append(Insight(
                 "Known CVE on an already-exposed asset", "high", host,
                 "A version-matched CVE co-occurs with an exposed store/config on the "
                 "same host — chain the CVE with the existing exposure.",
-                [f.asset for f in types.get("known_cve", [])][:8]))
+                [f.asset for f in types.get("known_cve", []) + types.get("nuclei_cve", [])][:8]))
         # zone transfer leaks the whole DNS zone
         if has("zone_transfer"):
             insights.append(Insight(

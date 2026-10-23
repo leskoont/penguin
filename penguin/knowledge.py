@@ -18,7 +18,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 logger = logging.getLogger("penguin.knowledge")
 
@@ -43,6 +43,34 @@ def cvss_severity(cvss: float) -> str:
     if cvss > 0:
         return "low"
     return "info"
+
+
+# Open service ports (block3's masscan/nmap hits) -> knowledge-bank product
+# keys, so a discovered open service yields the same default-credential /
+# CVE vectors a fingerprinted technology would. Only confident, product-specific
+# ports map here -- a vector is something the operator tests manually, so a
+# generic port (8080, 3000) that hosts anything must NOT claim a product.
+SERVICE_PORT_PRODUCTS = {
+    "6379": "redis",
+    "27017": "mongodb",
+    "9200": "elasticsearch",
+    "9300": "elasticsearch",
+    "8009": "tomcat",  # AJP
+}
+
+
+def products_for_ports(host_ports: "Iterable[str]") -> "dict[str, set[str]]":
+    """Map ``host:port`` strings to the KB products their ports imply.
+
+    Returns ``{product: {host:port, ...}}``. Pure; ports with no KB product
+    are skipped."""
+    out: dict[str, set[str]] = {}
+    for hp in host_ports or []:
+        port = str(hp).rpartition(":")[2]
+        prod = SERVICE_PORT_PRODUCTS.get(port)
+        if prod:
+            out.setdefault(prod, set()).add(str(hp))
+    return out
 
 
 # ---- version constraint matching (pure) ------------------------------------
@@ -251,6 +279,23 @@ class KnowledgeBank:
 
     def default_creds_for(self, product: str) -> list[dict]:
         return self.default_creds.get((product or "").lower(), [])
+
+    def service_vectors(self, host_ports: Iterable[str]) -> list[dict]:
+        """Vectors implied by *open service ports* (not fingerprinted tech).
+
+        Same shape as match()'s output, plus a ``host`` field naming the
+        ``host:port`` the product was inferred from, so downstream derivation
+        can attribute the finding to the actual service."""
+        vectors: list[dict] = []
+        for product, hosts in products_for_ports(host_ports).items():
+            creds = self.default_creds_for(product)
+            if creds:
+                for hp in sorted(hosts):
+                    vectors.append({
+                        "kind": "default_credentials", "product": product,
+                        "version": None, "creds": creds, "host": hp,
+                    })
+        return vectors
 
     def match(self, technologies: list[tuple]) -> list[dict]:
         """Cross-reference detected (product, version) tech against the bank.

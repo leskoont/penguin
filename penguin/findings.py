@@ -15,6 +15,7 @@ import logging
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger("penguin.findings")
 
@@ -61,6 +62,7 @@ _TYPES = {
     "zone_transfer": ("critical", "dig"),
     "kev_exploited": ("critical", "knowledge-bank/CISA-KEV"),
     "known_cve":     ("high",     "knowledge-bank"),
+    "nuclei_cve":    ("high",     "nuclei-cves"),
     "default_credentials": ("high", "knowledge-bank"),
     "js_secret":     ("high",     "jsluice/SecretFinder"),
     "open_database": ("high",     "nmap/masscan"),
@@ -89,14 +91,26 @@ def _mk(ftype: str, target: str, asset: str, *, url: str = "", evidence: str = "
                    source_tool=tool, url=url, evidence=evidence)
 
 
+def _default_credentials_finding(target: str, product: str, creds, *, host: str = "") -> Finding:
+    """One default_credentials finding. ``host`` (a host:port) is set by the
+    block5 service vectors, where the product was inferred from an open port;
+    asset then names both so the report shows which service to test."""
+    n = len(creds or [])
+    asset = f"{product} @ {host}" if host else product
+    return _mk("default_credentials", target, asset, url=host,
+               evidence=f"{n} known default credential set(s) for {product} — test manually")
+
+
 def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
-                    diff: dict) -> list[Finding]:
+                    diff: dict, b5: Optional[dict] = None) -> list[Finding]:
     """Build typed findings from the block result dicts + subdomain diff.
 
     Pure and central: adding a new finding type is a line here, not a change to
     every block. Asset strings are whatever the block collected (a hostname, a
-    host:port, a bucket URL, or an evidence file path)."""
+    host:port, a bucket URL, or an evidence file path). ``b5`` (the feedback
+    block) is optional so older callers keep working."""
     tv = str(target.get("value", ""))
+    b5 = b5 or {}
     out: list[Finding] = []
     for host in b1.get("takeovers", []):
         out.append(_mk("subdomain_takeover", tv, host, url=str(host),
@@ -157,9 +171,7 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
             out.append(Finding(type=kind, severity=sev, target=tv, asset=cve or f"{prod} {ver}",
                                source_tool=_TYPES[kind][1], evidence=ev))
         elif kind == "default_credentials":
-            n = len(vec.get("creds", []))
-            out.append(_mk("default_credentials", tv, prod,
-                           evidence=f"{n} known default credential set(s) for {prod} — test manually"))
+            out.append(_default_credentials_finding(tv, prod, vec.get("creds")))
     for issue in b2.get("web_issues", []):
         if not isinstance(issue, dict):
             continue
@@ -182,6 +194,26 @@ def derive_findings(target: dict, b1: dict, b2: dict, b3: dict, b4: dict,
         out.append(_mk("exposed_git", tv, git, url=str(git)))
     for sec in b4.get("secrets", []):
         out.append(_mk("secret", tv, sec, evidence="secret scanner hit"))
+    # block5 (feedback pass): confirmed CVE-template hits and the credential
+    # vectors implied by open service ports.
+    for hit in b5.get("cve_hits", []):
+        if not isinstance(hit, dict):
+            continue
+        cve = hit.get("cve") or hit.get("template_id") or ""
+        host = hit.get("host", "")
+        sev = "critical" if hit.get("severity") == "critical" else "high"
+        out.append(Finding(type="nuclei_cve", severity=sev, target=tv,
+                           asset=cve or host, url=host,
+                           source_tool=_TYPES["nuclei_cve"][1],
+                           evidence=hit.get("name") or "nuclei CVE template match"))
+    for vec in b5.get("service_vectors", []):
+        if not isinstance(vec, dict):
+            continue
+        # block5's service vectors carry the host:port the product was inferred
+        # from; block2's tech-derived ones don't (asset = product there).
+        out.append(_default_credentials_finding(
+            tv, str(vec.get("product", "")), vec.get("creds"),
+            host=str(vec.get("host") or "")))
     # Drop findings whose asset came from a falsy/None list entry (a degraded
     # block can hand back None/"" items); str(None) would otherwise leak a junk
     # "None" asset into the report.

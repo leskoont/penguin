@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .. import analysis, diagnostics
 from ..config import Config
-from ..findings import SEVERITY_ORDER, Finding
+from ..findings import SEVERITY_ORDER, Finding, severity_sort_key
 from ..findings import _sanitize_slug as _sanitize_slug  # single source of truth
 
 logger = logging.getLogger("penguin.report")
@@ -48,7 +48,7 @@ def _findings_markdown(findings: list[Finding], run_id: str) -> list[str]:
         items = grouped[sev]
         lines.append(f"### {_SEV_EMOJI.get(sev, '')} {sev.upper()} ({len(items)})")
         lines.append("")
-        for f in sorted(items, key=lambda x: (x.type, x.asset)):
+        for f in sorted(items, key=severity_sort_key):
             is_new = f.first_seen_run == run_id
             tag = " **[new]**" if is_new else ""
             asset = f.url or f.asset
@@ -111,7 +111,7 @@ def _html_report(target: str, summary: dict, findings: list[Finding], run_id: st
         return html.escape(str(s))
 
     rows = []
-    for f in sorted(findings, key=lambda x: (SEVERITY_ORDER.get(x.severity, 99), x.type, x.asset)):
+    for f in sorted(findings, key=severity_sort_key):
         new = " (new)" if f.first_seen_run == run_id else ""
         rows.append(
             f"<tr class='{esc(f.severity)}'><td>{esc(f.severity)}</td>"
@@ -122,7 +122,8 @@ def _html_report(target: str, summary: dict, findings: list[Finding], run_id: st
     metrics = "".join(
         f"<li>{esc(k)}: <b>{esc(summary.get(k, 0))}</b></li>"
         for k in ("subdomains", "live", "endpoints", "js_secrets", "open_db",
-                  "buckets", "new_subdomains", "exposed_git", "secrets")
+                  "buckets", "new_subdomains", "exposed_git", "secrets",
+                  "cve_hits", "feedback_new_live")
     )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -188,6 +189,22 @@ def build_report(cfg: Config, target: dict, summary: dict) -> Path:
         f"- New findings this run: **{summary.get('new_findings', 0)}**",
         "",
     ]
+    risk = summary.get("risk") or {}
+    if risk:
+        md_text += [
+            f"- Risk band: **{str(risk.get('band', '?')).upper()}** "
+            f"(effective score {risk.get('effective_score', 0)}, "
+            f"{risk.get('insights', 0)} correlated insights)",
+            "",
+        ]
+    feedback = [summary.get("stragglers_resolved", 0), summary.get("feedback_new_live", 0)]
+    if any(feedback):
+        md_text += [
+            f"- Feedback pass: re-resolved **{feedback[0]}** straggler subdomain(s), "
+            f"**{feedback[1]}** turned out live; **{summary.get('cve_hits', 0)}** "
+            "confirmed CVE hit(s) from the targeted scan",
+            "",
+        ]
     md_text += _analysis_markdown(findings)
     md_text += _findings_markdown(findings, run_id)
     md_text += _coverage_markdown(run_dir) if run_dir else []

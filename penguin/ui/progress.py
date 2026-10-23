@@ -11,6 +11,7 @@ BLOCK_LABELS = {
     2: "Block 2: web",
     3: "Block 3: cloud & db",
     4: "Block 4: elite/git",
+    5: "Block 5: feedback re-runs",
 }
 
 

@@ -13,6 +13,7 @@ _STAGE_LABELS = {
     "web": "Block 2: web",
     "cloud_db": "Block 3: cloud & db",
     "elite": "Block 4: elite/git",
+    "feedback": "Block 5: feedback re-runs",
 }
 
 

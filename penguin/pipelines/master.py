@@ -22,6 +22,7 @@ from .block1_infra import run_block1
 from .block2_web import run_block2
 from .block3_cloud_db import run_block3
 from .block4_elite import run_block4
+from .block5_feedback import run_block5
 
 logger = logging.getLogger("penguin.master")
 
@@ -95,6 +96,8 @@ _BLOCK_FALLBACKS: dict[int, dict] = {
         "content_issues": [], "kb_findings": []},
     3: {"open_db": [], "buckets": []},
     4: {"origin_ips": [], "exposed_git": [], "secrets": []},
+    5: {"stragglers": [], "new_live": [], "service_vectors": [], "cve_hits": [],
+        "web_issues": []},
 }
 
 # Ordered block sequence for run_target's cancel-between-blocks loop below.
@@ -103,16 +106,19 @@ _BLOCKS: list[tuple[int, str, Callable]] = [
     (2, "web", run_block2),
     (3, "cloud_db", run_block3),
     (4, "elite", run_block4),
+    (5, "feedback", run_block5),
 ]
 
 
-def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict) -> dict[str, int]:
-    """Non-empty high-severity finding categories across blocks 1-4.
+def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict,
+                       b5: Optional[dict] = None) -> dict[str, int]:
+    """Non-empty high-severity finding categories across blocks 1-5.
 
     Returns only categories with a positive count, so callers can treat a
     truthy result as "something worth a critical alert". Kept pure + separate
     from run_target so it is unit-testable without running the pipeline.
     """
+    b5 = b5 or {}
     cors = sum(1 for i in b2.get("web_issues", [])
                if isinstance(i, dict) and (i.get("cors_bad") or i.get("cors_reflected")))
     zone = sum(1 for i in b1.get("dns_issues", [])
@@ -132,6 +138,7 @@ def _critical_findings(b1: dict, b2: dict, b3: dict, b4: dict) -> dict[str, int]
         "active XSS": len(b2.get("active", [])),
         "exposed configs": exposed_cfg,
         "actively-exploited CVEs (KEV)": kev,
+        "confirmed CVE hits (nuclei)": len(b5.get("cve_hits", [])),
     }
     return {k: n for k, n in categories.items() if n}
 
@@ -232,9 +239,12 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
             break
         results[block_num] = _run_block(cfg, state, target, progress_cb, block_num, name, run_fn,
                                         resume=resume)
-    for block_num, _name, _run_fn in _BLOCKS:
+    # Fill fallbacks for every known block number (decoupled from _BLOCKS so a
+    # patched/shortened block list -- or a block skipped by cancellation --
+    # still yields a valid result dict for all downstream consumers).
+    for block_num in _BLOCK_FALLBACKS:
         results.setdefault(block_num, {k: list(v) for k, v in _BLOCK_FALLBACKS[block_num].items()})
-    b1, b2, b3, b4 = results[1], results[2], results[3], results[4]
+    b1, b2, b3, b4, b5 = (results[1], results[2], results[3], results[4], results[5])
 
     # accumulate into per-target history files (anew dedup). Wrapped so a
     # failure here (e.g. a corrupt live/httpx.csv) can't skip diff/notify/
@@ -258,6 +268,10 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         # here for the cross-run accumulator would make one filename mean two
         # different things depending on which directory you're looking in.
         state.add_lines(ARTIFACTS.ALL_LIVE_HOSTS, live_urls)
+        # block5's feedback re-probe of straggler subdomains may have turned
+        # additional names live after block1's own httpx pass -- feed those
+        # into the same cross-run accumulator.
+        state.add_lines(ARTIFACTS.ALL_LIVE_HOSTS, b5.get("new_live", []))
     except Exception:
         logger.exception("[%s] failed to accumulate run history", target["value"])
 
@@ -286,7 +300,7 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
     # artifacts the pipeline surfaces: leaked secrets, open databases, exposed
     # .git, and public buckets. notify() itself is gated on notify.enabled +
     # the event being in notify_on, so this is a no-op unless configured.
-    hits = _critical_findings(b1, b2, b3, b4)
+    hits = _critical_findings(b1, b2, b3, b4, b5)
     if hits:
         detail = ", ".join(f"{n} {k}" for k, n in hits.items())
         logger.warning("[%s] CRITICAL findings: %s", target["value"], detail)
@@ -322,6 +336,10 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
         "kb_findings": len(b2.get("kb_findings", [])),
         "kev": sum(1 for v in b2.get("kb_findings", [])
                    if isinstance(v, dict) and v.get("kind") == "kev_exploited"),
+        "stragglers_resolved": len(b5.get("stragglers", [])),
+        "feedback_new_live": len(b5.get("new_live", [])),
+        "service_vectors": len(b5.get("service_vectors", [])),
+        "cve_hits": len(b5.get("cve_hits", [])),
     }
 
     # Typed, severity-ranked findings, accumulated per target with a
@@ -330,10 +348,16 @@ def run_target(cfg: Config, target: dict, progress_cb: Optional[ProgressCb] = No
     try:
         from ..findings import FindingStore, derive_findings
         store = FindingStore.for_target(cfg.path("reports"), target["value"])
-        derived = derive_findings(target, b1, b2, b3, b4, diff)
+        derived = derive_findings(target, b1, b2, b3, b4, diff, b5=b5)
         current, new_findings = store.record(derived, state.run_dir.name)
         summary["findings"] = [f.to_dict() for f in current]
         summary["new_findings"] = len(new_findings)
+        # Risk-band snapshot so reports/logs carry the correlated posture, not
+        # just raw counts (same engine `penguin analyze` uses).
+        from .. import analysis as _analysis
+        a = _analysis.analyze(current)
+        summary["risk"] = {"overall": a["overall"], "effective_score": a["effective_score"],
+                           "band": a["risk_band"], "insights": len(a["insights"])}
     except Exception:  # noqa
         logger.exception("[%s] findings derivation failed", target["value"])
         summary["findings"] = []
