@@ -19,7 +19,6 @@ import penguin.pipelines.master as m
 from penguin.config import Config
 from penguin.pipelines.report import build_report
 
-
 # ---- rich synthetic block outputs covering every finding type ----------------
 
 def _b1(subs):

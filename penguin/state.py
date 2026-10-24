@@ -293,12 +293,6 @@ class RunState:
             json.dump(data, fh, indent=2, ensure_ascii=False)
         return p
 
-    def save_text(self, name: str, text: str) -> Path:
-        p = self.run_dir / name
-        with open(p, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        return p
-
     # ---- diff (comm -13 style) ----
     def diff_against_previous(self, filename: str) -> dict:
         """Compare today's accumulated file vs the previous run's file."""
