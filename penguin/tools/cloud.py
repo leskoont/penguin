@@ -1,10 +1,35 @@
 """Cloud / bucket discovery wrappers (Block 3.2)."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Optional
 
 from ._base import ToolContext, ok_path
+
+# Bucket names as they appear in s3scanner output: virtual-host style
+# ("bucket.s3.amazonaws.com") or URI style ("s3://bucket"). Constrained to the
+# real S3 bucket charset so junk lines can't smuggle arbitrary text into
+# findings.
+_S3_NAME_RE = re.compile(
+    r"(?:([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])\.s3[.-](?:[a-z0-9-]*\.)?amazonaws\.com"
+    r"|\bs3://([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])\b)", re.IGNORECASE)
+
+
+def parse_s3scanner(text: str) -> list[str]:
+    """Bucket names from s3scanner stdout (deduped, order preserved).
+
+    The raw output is mixed prose/tables whose format varies by version, so
+    extract only names in the two unambiguous forms above -- never pass the
+    output file's *path* (or arbitrary prose) through as a "bucket" finding."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in _S3_NAME_RE.finditer(text or ""):
+        name = (m.group(1) or m.group(2) or "").lower()
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
 
 
 def aws_s3_ls(ctx: ToolContext, bucket: str, out: Path) -> bool:

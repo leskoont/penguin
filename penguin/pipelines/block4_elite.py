@@ -37,6 +37,10 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
     # writing its own distinct file -- no shared state, no target hammering --
     # so fan them out instead of summing their latencies serially.
     origin_dir = state.sub("origin")
+    # cloudflair was dropped: it shelled out to a `cloudflair.py` that was
+    # never installed (dead on every run) via a CWD-relative python3 call --
+    # a plant-a-file-and-execute footgun -- and its censys coverage is already
+    # provided by censys_certs + verify_origin below.
     origin_tasks = [
         partial(og.dig_resolve, ctx, f"www.{domain}", "1.1.1.1", origin_dir / "dig_www.txt"),
         partial(og.dig_resolve, ctx, domain, "1.1.1.1", origin_dir / "dig_apex.txt"),
@@ -44,7 +48,6 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
         partial(og.viewdns_history, ctx, domain, origin_dir / "viewdns.txt"),
         partial(og.historical_dns_securitytrails, ctx, domain, origin_dir / "securitytrails.json"),
         partial(og.censys_certs, ctx, domain, origin_dir / "censys_certs.json"),
-        partial(og.cloudflair, ctx, domain, origin_dir / "cloudflair.txt"),
     ]
     run_parallel(origin_tasks, max_workers=cfg.general.clamp_workers(cfg.general.max_parallel_tools),
                  label="block4 origin discovery")
@@ -137,7 +140,12 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
     # ---- exposed docker registries (best-effort hostname guesses) ----
     registry_dir = state.sub("gitcicd/registries")
     for registry in (f"registry.{domain}", f"{domain}:5000"):
-        catalog_out = registry_dir / f"catalog_{registry.replace(':', '_').replace('/', '_')}.json"
+        # Filenames are built from remote-controlled strings (the registry's
+        # JSON `repositories` list, the operator's domain) -- sanitize every
+        # component. replace('/','_') alone does NOT neutralize Windows
+        # backslash traversal ("..\..\evil" survives it); _sanitize_slug kills
+        # both separators.
+        catalog_out = registry_dir / f"catalog_{_sanitize_slug(registry)}.json"
         cat = gc.docker_registry_catalog(ctx, registry, catalog_out)
         if cat and cat.exists():
             import json as _json
@@ -146,9 +154,12 @@ def run_block4(cfg: Config, state: RunState, target: dict) -> dict:
                 repos = _json.loads(cat.read_text(encoding="utf-8")).get("repositories", [])
             except Exception:
                 repos = []
+            if not isinstance(repos, list):
+                repos = []
             for repo in repos[:10]:
+                repo = str(repo)
                 gc.trivy_image(ctx, f"{registry}/{repo}:latest",
-                               registry_dir / f"trivy_{repo.replace('/', '_')}.json")
+                               registry_dir / f"trivy_{_sanitize_slug(repo)}.json")
 
     # ---- custom nuclei templates on live hosts ----
     live_hosts = state.path(ARTIFACTS.LIVE_HOSTS)

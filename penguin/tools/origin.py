@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ._base import ToolContext, ok_path
+from ._base import ToolContext
 
 
 def _curlcfg_escape(value: str) -> str:
@@ -80,22 +80,6 @@ def censys_certs(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
         out.write_text(r.stdout, encoding="utf-8")
         return out
     return None
-
-
-def cloudflair(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
-    if not ctx.cfg.paid_enabled("censys"):
-        return None
-    # CloudFlair reads CENSYS_API_ID / CENSYS_API_SECRET from the environment
-    # when -k/-s are omitted -- keeps the key out of argv (ps/proc/pid/cmdline).
-    cmd = ["python3", "cloudflair.py", domain, "-o", str(out)]
-    r = ctx.execute(
-        "cloudflair", cmd, timeout=300,
-        extra_env={
-            "CENSYS_API_ID": ctx.cfg.paid_key("censys", "id"),
-            "CENSYS_API_SECRET": ctx.cfg.paid_key("censys", "secret"),
-        },
-    )
-    return ok_path(r, out)
 
 
 def verify_origin(ctx: ToolContext, domain: str, origin_ip: str, out: Path) -> Optional[Path]:

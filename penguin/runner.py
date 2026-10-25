@@ -158,5 +158,8 @@ def run(
             time.sleep(min(backoff * (2 ** (attempts - 1)), 8))
     res = RunResult(cmd, -1, "", last_err, attempts, time.time() - start, False)
     if fatal:
-        raise RuntimeError(f"command failed after {attempts} attempts: {' '.join(cmd)}")
+        # Binary name only: full argv can carry target URLs with embedded
+        # credentials in query strings (a classic JS-leak artifact) into logs.
+        raise RuntimeError(
+            f"command failed after {attempts} attempts: {cmd[0]} (see warnings above)")
     return res

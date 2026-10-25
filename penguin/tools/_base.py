@@ -175,18 +175,23 @@ class ToolContext:
 
     def execute(self, tool: str, cmd: list, *, timeout: Optional[float] = None, log_stdout: bool = False,
                 extra_env: Optional[dict] = None, retries: Optional[int] = None, input: Optional[str] = None,
-                proxy: Optional[bool] = None):
+                proxy: Optional[bool] = None, cwd: Optional[str] = None):
         """Run a tool and, when this context has a run_dir, append one outcome
         record to the per-run ledger. The heavy lifting is in _execute_impl;
-        this wrapper only adds telemetry so every return path is covered once."""
+        this wrapper only adds telemetry so every return path is covered once.
+        ``cwd`` isolates tools that insist on writing hard-coded relative
+        paths (paramspider's ./results/) so they can't scatter files into (or
+        pick up stale/planted files from) the directory penguin was launched
+        from."""
         result = self._execute_impl(tool, cmd, timeout=timeout, log_stdout=log_stdout,
-                                    extra_env=extra_env, retries=retries, input=input, proxy=proxy)
+                                    extra_env=extra_env, retries=retries, input=input,
+                                    proxy=proxy, cwd=cwd)
         self._ledger(tool, result)
         return result
 
     def _execute_impl(self, tool: str, cmd: list, *, timeout: Optional[float] = None, log_stdout: bool = False,
                       extra_env: Optional[dict] = None, retries: Optional[int] = None, input: Optional[str] = None,
-                      proxy: Optional[bool] = None):
+                      proxy: Optional[bool] = None, cwd: Optional[str] = None):
         to = timeout or self.cfg.general.timeout
         env = {**os.environ, **extra_env} if extra_env else None
         backoff = self.cfg.general.retry_backoff
@@ -217,7 +222,8 @@ class ToolContext:
             # explicitly asks for more (e.g. crt.sh, a flaky public aggregator
             # where a genuine transient can clear on a second direct request).
             n = max(1, retries) if retries is not None else 1
-            return run(cmd, retries=n, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env, input=input)
+            return run(cmd, retries=n, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env, input=input,
+                       cwd=cwd)
 
         n = max(1, retries if retries is not None else self.cfg.general.retry_attempts)
         # Proxy-routed tools: a dead/broken proxy (e.g. curl exit=97
@@ -241,7 +247,7 @@ class ToolContext:
                 return RunResult(cmd, -1, "", "no proxy available", 0, 0.0, False)
             full_cmd = list(cmd) + self.proxy_flag(tool, proxy) if proxy else list(cmd)
             result = run(full_cmd, retries=1, backoff=backoff, timeout=to, log_stdout=log_stdout, env=env,
-                         input=input, log_attempt=(attempt + 1, n))
+                         input=input, log_attempt=(attempt + 1, n), cwd=cwd)
             if result.ok or is_permanent(cmd[0], result.returncode, result.stderr):
                 return result
             # Evict a proxy that failed outright from the rotation so the pool

@@ -31,18 +31,26 @@ def secretfinder(ctx: ToolContext, js_file: Path) -> Optional[str]:
     return r.stdout if r.ok and r.stdout else None
 
 
-def jsluice(ctx: ToolContext, js_glob: str, out: Path) -> Optional[Path]:
-    import glob as glob_mod
-    # Expand glob pattern before passing to jsluice (shell doesn't expand when invoked programmatically)
-    expanded = glob_mod.glob(js_glob)
-    if not expanded:
+def jsluice(ctx: ToolContext, js_files: "list[Path]", out: Path, *, chunk: int = 100) -> Optional[Path]:
+    """Run jsluice over downloaded JS files, writing combined URL output.
+
+    Takes a list of paths (the old signature took a space-joined string fed to
+    glob(), which could never match and made jsluice a silent no-op). Files are
+    passed in chunks so the argv stays well under the Windows command-line
+    length limit on JS-heavy targets; stdout chunks are concatenated."""
+    files = [str(f) for f in (js_files or []) if Path(f).exists()]
+    if not files:
         return None
-    cmd = ["jsluice", "urls"] + expanded
-    r = ctx.execute("jsluice", cmd, timeout=180)
-    if r.ok:
-        out.write_text(r.stdout, encoding="utf-8")
-        return out
-    return None
+    parts: list[str] = []
+    for i in range(0, len(files), max(1, chunk)):
+        cmd = ["jsluice", "urls"] + files[i:i + max(1, chunk)]
+        r = ctx.execute("jsluice", cmd, timeout=180)
+        if r.ok and r.stdout:
+            parts.append(r.stdout)
+    if not parts:
+        return None
+    out.write_text("".join(parts), encoding="utf-8")
+    return out
 
 
 def trufflehog_git(ctx: ToolContext, target: str, out: Path) -> Optional[Path]:

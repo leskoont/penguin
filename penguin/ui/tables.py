@@ -1,6 +1,12 @@
-"""Rich table builders for CLI output."""
+"""Rich table builders for CLI output.
+
+Every dynamic string that originates from scan output (host names, source
+filenames, error text) is passed through rich.markup.escape before entering a
+cell: Rich interprets square-bracket tags as markup by default, and target-
+controlled text must never be able to inject console markup."""
 from __future__ import annotations
 
+from rich.markup import escape
 from rich.table import Table
 
 
@@ -9,7 +15,7 @@ def install_check_table(results: list[tuple[str, bool]]) -> Table:
     t.add_column("tool")
     t.add_column("status")
     for name, present in results:
-        t.add_row(name, "[green]present[/]" if present else "[red]MISSING[/]")
+        t.add_row(escape(name), "[green]present[/]" if present else "[red]MISSING[/]")
     return t
 
 
@@ -19,20 +25,20 @@ def url_check_table(results: list[tuple[str, bool, str | None]]) -> Table:
     t.add_column("status")
     for label, is_alive, error in results:
         if is_alive:
-            t.add_row(label, "[green]OK[/]")
+            t.add_row(escape(label), "[green]OK[/]")
         else:
-            t.add_row(label, f"[red]DEAD[/] ({error})")
+            t.add_row(escape(label), f"[red]DEAD[/] ({escape(error or '')})")
     return t
 
 
 def summary_table(target: str, summary: dict) -> Table:
-    t = Table(title=f"penguin run summary - {target}")
+    t = Table(title=f"penguin run summary - {escape(target)}")
     t.add_column("metric")
     t.add_column("count", justify="right")
     for key in ("subdomains", "live", "endpoints", "js_secrets",
                 "open_db", "buckets", "new_subdomains", "exposed_git", "secrets",
                 "takeovers", "web_issues"):
-        t.add_row(key, str(summary.get(key, 0)))
+        t.add_row(escape(key), str(summary.get(key, 0)))
     return t
 
 
@@ -88,8 +94,8 @@ def risk_hosts_table(top_hosts: list) -> Table:
                  "low": "cyan", "info": "dim"}
     for h in top_hosts:
         sev = h.get("top_severity", "info")
-        t.add_row(str(h.get("host", "?")), str(h.get("score", 0)),
-                  f"[{sev_color.get(sev, 'white')}]{sev}[/]", str(h.get("count", 0)))
+        t.add_row(escape(str(h.get("host", "?"))), str(h.get("score", 0)),
+                  f"[{sev_color.get(sev, 'white')}]{escape(sev)}[/]", str(h.get("count", 0)))
     return t
 
 
@@ -100,5 +106,5 @@ def sources_table(counts: dict) -> Table:
     t.add_column("names", justify="right")
     for name in sorted(counts, key=lambda k: (-counts[k], k)):
         n = counts[name]
-        t.add_row(name, f"[green]{n}[/]" if n else "[red]0[/]")
+        t.add_row(escape(name), f"[green]{n}[/]" if n else "[red]0[/]")
     return t

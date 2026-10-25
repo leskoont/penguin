@@ -71,7 +71,8 @@ def chaos(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
 
 
 def crtsh(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
-    cmd = ["curl", "-s", f"https://crt.sh/?q=%25.{domain}&output=json"]
+    from urllib.parse import quote
+    cmd = ["curl", "-s", f"https://crt.sh/?q=%25.{quote(domain, safe='')}&output=json"]
     # crt.sh is a public certificate-transparency aggregator (passive OSINT --
     # the query hits crt.sh, never the target), and it flat-out does not work
     # through the free SOCKS proxy pool: every attempt died with curl exit 97

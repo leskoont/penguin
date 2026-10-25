@@ -3,10 +3,13 @@ directory/param fuzzing.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
 from ._base import ToolContext, ok_path
+
+logger = logging.getLogger("penguin.tools.content")
 
 
 def katana(ctx: ToolContext, in_file: Path, out: Path) -> Optional[Path]:
@@ -104,16 +107,24 @@ def arjun(ctx: ToolContext, url: str, out: Path, method: str = "GET",
 
 def paramspider(ctx: ToolContext, domain: str, out: Path) -> Optional[Path]:
     # paramspider has no -o/--output flag -- it always writes to a hardcoded
-    # ./results/<domain>.txt relative to the CWD it's invoked from. Run it,
-    # then relocate that file to the caller-requested `out` path.
+    # ./results/<domain>.txt relative to the CWD it's invoked from. Run it
+    # inside a throwaway directory (execute's cwd isolation) so it can neither
+    # scatter files into whatever directory penguin was launched from nor pick
+    # up a stale/planted file of the same name, then relocate the output.
     import shutil
+    import tempfile
 
-    cmd = ["paramspider", "-d", domain]
-    r = ctx.execute("paramspider", cmd, timeout=600)
-    produced = Path("results") / f"{domain}.txt"
-    if r.ok and produced.exists():
-        out.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(produced), str(out))
+    with tempfile.TemporaryDirectory(prefix="penguin-paramspider-") as tmp:
+        cmd = ["paramspider", "-d", domain]
+        r = ctx.execute("paramspider", cmd, timeout=600, cwd=tmp)
+        produced = Path(tmp) / "results" / f"{domain}.txt"
+        if r.ok and produced.is_file():
+            out.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.move(str(produced), str(out))
+            except OSError:
+                logger.warning("[paramspider] could not relocate output for %s", domain)
+                return None
     return ok_path(r, out)
 
 

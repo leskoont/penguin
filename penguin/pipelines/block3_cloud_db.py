@@ -93,7 +93,17 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
     # ---- bucket discovery ----
     bucket_out = state.path("cloud/buckets.txt")
     bucket_out.parent.mkdir(parents=True, exist_ok=True)
-    candidates = [domain, domain.replace(".", "-"), domain.split(".")[0]]
+    # Common bucket-naming conventions derived from the domain: dotted,
+    # dash-separated (the S3 convention), underscore, dot-less apex label,
+    # and dash-with-tld ("example-com"). Each extra candidate is 3 cheap
+    # provider probes (aws/azure/gcs) against the cloud endpoints, not the
+    # target, so the added coverage costs almost nothing.
+    tld = domain.split(".")[-1] if "." in domain else ""
+    apex = domain.split(".")[0]
+    candidates = [domain, domain.replace(".", "-"), domain.replace(".", "_"),
+                  domain.replace(".", ""), apex,
+                  f"{apex}-{tld}" if tld else None]
+    candidates = [c for c in candidates if c]
     # aws/azure/gcs probe cloud-provider endpoints (s3/blob/storage), not the
     # target, so they overlap safely. Each only *appends* to its `out` on a hit,
     # so concurrent writes to one shared file would interleave -- give every
@@ -122,7 +132,15 @@ def run_block3(cfg: Config, state: RunState, target: dict) -> dict:
     s3scan_out = state.path("cloud/s3scanner.txt")
     cl.s3scanner(ctx, cand_file, s3scan_out)
     if s3scan_out.exists():
-        results["buckets"].append(str(s3scan_out))
+        # Second-opinion signal: real bucket NAMES from the scanner output --
+        # never the output file's path, which used to land in findings as a
+        # bogus "public bucket" (a critical-severity false positive on every
+        # run that reached this stage).
+        s3_names = cl.parse_s3scanner(s3scan_out.read_text(encoding="utf-8", errors="ignore"))
+        known = {c.lower() for c in candidates}
+        fresh = [n for n in s3_names if n not in known]
+        if fresh:
+            results["buckets"].extend(f"s3://{n}" for n in fresh)
 
     if bucket_out.exists():
         results["buckets"] += bucket_out.read_text(encoding="utf-8").splitlines()
