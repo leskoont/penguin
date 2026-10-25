@@ -5,6 +5,90 @@ codebase. Derived from a full read of `penguin/` (config, runner, state,
 proxies, wordlists, notify, venv, `tools/*`, `pipelines/*`, `ui/*`) on
 2026-07-14.
 
+## 🛡️ Security & non-compromisability audit — 2026-10-25
+
+Full-tree audit for code-execution / injection / leakage vectors, plus making
+the deep tier SLIRP-safe. 21 new regression tests (`tests/test_hardening.py`);
+suite 427 green.
+
+- **Deep tier is SLIRP-safe**: `probe.alt_port_targets()` builds the host:port
+  pair list (no version-dependent httpx `-ports` flag), hard-capped at 600
+  pairs, breadth-first across hosts; `httpx_ports` runs at half the thread
+  budget.
+- **Removed `cloudflair` wrapper** — it shelled out to `python3 cloudflair.py`
+  *CWD-relative* (a plant-a-file-and-it-executes footgun; nothing installs the
+  script, so it was also dead on every run). censys coverage stays via
+  `censys_certs` + `verify_origin`.
+- **`jsluice` fixed** — took a space-joined string fed to `glob()`, which could
+  never match, making jsluice a silent no-op. Now takes a file list, chunked to
+  stay under the Windows argv-length limit.
+- **`paramspider` cwd-isolated** — wrote its hardcoded `./results/<domain>.txt`
+  into whatever directory penguin was launched from (and could pick up a
+  stale/planted file there). `ToolContext.execute` gained a `cwd` passthrough;
+  the wrapper now runs it in a throwaway temp dir and relocates the output.
+- **Path traversal from remote data closed** — docker-registry `repositories`
+  entries (attacker-controlled JSON on a compromised in-scope registry) built
+  trivy/catalog output filenames with `replace('/','_')`, which does NOT
+  neutralize Windows backslashes (`..\..\evil` traversed). All remote-sourced
+  filename components now go through `_sanitize_slug`.
+- **s3scanner output no longer fabricates findings** — the output file's *path*
+  was appended as a "public bucket", a critical false positive every run;
+  real bucket names are now parsed from the scanner output.
+- **Console-markup injection closed** — host names / source filenames / error
+  text derived from scan output passed raw into Rich cells and prints, where
+  `[red]`-style tags are interpreted; all dynamic strings are now
+  `rich.markup.escape`d (tables.py, diagnose/analyze output).
+- **Fatal-error argv redaction** — `runner.run(fatal=True)` included the full
+  command line in the exception; target URLs can carry credentials in query
+  strings (a classic JS-leak artifact), so the message now names the binary
+  only.
+- **URL-encoding of operator input** — domains interpolated into OSINT URLs
+  (OTX/RapidDNS/HackerTarget/urlscan/Wayback CDX/crt.sh) are now
+  percent-encoded.
+- **Block2 races fixed (deep-enabled)** — archive sources (gau/waybackurls/
+  paramspider) are keyed by deduped *domain* (host:port duplicates from the
+  alt-port merge previously produced concurrent writes to the same file and an
+  invalid host:port "domain" for paramspider); dir-fuzz output files are
+  idx-keyed (slug collision between a.com and a.com:8443); grpcurl target
+  strips any URL port first.
+- **Verified clean**: no shell=True/eval/exec/pickle anywhere; yaml is
+  safe_load-only; subprocess always list-argv; API keys reach tools via env or
+  temp `-K` config files (curl_with_secret), never argv; proxy URLs are single
+  argv elements (no flag smuggling); report HTML escapes all interpolated
+  values; manifest/ledger never record secrets.
+
+---
+
+## 🔁 Wider recon + feedback re-runs — 2026-10-25
+
+- **Wider passive recon** (`tools/osint.py`): four new pure-curl OSINT sources
+  fan out in block1 beside the Go tooling — AlienVault OTX passive DNS,
+  RapidDNS, HackerTarget hostsearch, urlscan.io — all aggregator-hits (never
+  the target), direct-fetch policy like crt.sh, pure `parse_*` functions.
+- **Wayback CDX endpoint mining** (block2): every archived URL under the target
+  feeds the endpoint set (retired endpoints, old APIs, parameterized URLs);
+  `.js` hits fold into the JS analysis chain.
+- **Deep tier** (`--deep` / `general.deep`): alternate web-port probing
+  (httpx `-ports 81,3000,...,9090`) over known live hosts; newly found
+  host:port URLs feed the host set and downstream checks. Target-facing, so
+  off by default; passive OSINT is always on.
+- **Block 5 — feedback re-runs** (`pipelines/block5_feedback.py`, stage
+  `feedback`): data-driven second passes after blocks 1-4 — straggler
+  subdomains that surfaced after block1's resolve stage get re-resolved +
+  probed; open service ports (redis/mongodb/elasticsearch/AJP) map to
+  knowledge-bank default-credential vectors (`knowledge.SERVICE_PORT_PRODUCTS`);
+  a targeted nuclei official-CVE-template scan runs **only when** block2's KB
+  match flagged vulnerable tech; newly-live straggler hosts get the CORS/header
+  re-check. New finding type `nuclei_cve`; correlation engine chains it with
+  exposed assets; reports/logs carry a risk-band snapshot.
+- **Coherence/dead-code pass**: `RunState.save_text` removed; report sorting
+  now uses `findings.severity_sort_key` (was a duplicated inline lambda);
+  block-fallback filling decoupled from `_BLOCKS`; progress/wizard/dry-run/
+  config/docs updated for block 5. Suite: 406 passed (2 known Windows-only
+  failures pre-date this work), ruff clean.
+
+---
+
 ## 🔗 Knowledge-bank layer — 2026-10-01
 
 - **`penguin/knowledge.py`**: cross-references discovered tech+versions against

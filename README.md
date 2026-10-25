@@ -27,10 +27,11 @@ Pipeline blocks (mirror the guide):
 | Block | Module | Covers |
 |---|---|---|
 | 0 | `pipelines/master.py` | orchestration, accumulation, diff, notify, report |
-| 1 | `pipelines/block1_infra.py` | ASN/BGP, 3-stage subdomain enum, resolve, IPv6 |
+| 1 | `pipelines/block1_infra.py` | ASN/BGP, subdomain enum (OSINT aggregators incl. OTX/RapidDNS/HackerTarget/urlscan), resolve, IPv6 |
 | 2 | `pipelines/block2_web.py` | tech fingerprint, JS analysis, fuzzing, API recon |
 | 3 | `pipelines/block3_cloud_db.py` | open DB scan, bucket discovery |
 | 4 | `pipelines/block4_elite.py` | origin IP / Cloudflare bypass, CI/CD+Git, custom Nuclei |
+| 5 | `pipelines/block5_feedback.py` | data-driven re-runs: straggler re-probe, open-port credential vectors, targeted nuclei CVE scan on KB-flagged tech |
 
 ## Install
 
@@ -69,6 +70,10 @@ package import work from any directory):
 ```bash
 # single target
 ./penguin.sh run --target example.com        # WSL/Linux/macOS
+
+# deep tier: also probe alternate web ports (8080/8000/3000/...) on live hosts
+# (SLIRP-safe: pair list capped at 600 targets, half the normal thread budget)
+./penguin.sh run --target example.com --deep
 pwsh ./penguin.ps1 run --target example.com   # Windows PowerShell
 penguin.bat run --target example.com          # Windows cmd
 
@@ -117,6 +122,9 @@ Beyond raw findings, penguin builds **analytics on top of correlations**:
 - **Knowledge-bank comparison**: detected technologies + versions are
   cross-referenced against public vulnerability banks — **CISA KEV**, a
   product→CVE map (with CVSS/EPSS), and default-credential lists — to derive new
+  vectors; **open service ports** (redis/mongodb/elasticsearch/AJP) from block3
+  are mapped to the same bank, so an unauthenticated open DB surfaces its known
+  default-credential sets even without a fingerprint
   vectors: `kev_exploited` (critical, actively exploited in the wild),
   `known_cve` (severity from CVSS), and `default_credentials`. A seed set ships
   in `penguin/data/knowledge/`; `penguin kb-update` refreshes KEV from the live
